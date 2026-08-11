@@ -1,10 +1,11 @@
 # All Things Agentic Hackathon — Project Plan
 
-One submission, aimed squarely at one track's rubric:
+Two submissions, each aimed squarely at one track's rubric:
 
 | # | Project | Track | Deadline pacing |
 |---|---|---|---|
-| 1 | **Career Agent** (Job Search + Freelance Client workflows) | Taskmaster | The whole build |
+| 1 | **Career Agent** (Job Search + Freelance Client workflows) | Taskmaster | Primary build — do this first |
+| 2 | **Wireframe Assistant** | Collaborative Partner | Secondary build — only after #1 has a working end-to-end demo |
 
 Today is Aug 11, submission closes Aug 31 (5:00pm PDT) — 20 days. Treat Career Agent's Job workflow as the thing that must work end-to-end no matter what; everything else is additive.
 
@@ -72,10 +73,33 @@ Must-have for a working demo: Job workflow, one or two board sources, matching +
 
 ---
 
-## Tech requirement checklist
+## Part 2 — Wireframe Assistant (Collaborative Partner track)
+
+### Why this fits Collaborative Partner
+Stateful, multi-turn, guides the user step by step, explicitly captures feedback and adapts — this is close to verbatim what the track's own example describes ("turns a vague idea into a wireframe, learns your brand preferences from your corrections").
+
+### Flow
+1. User describes a screen/feature idea in plain language — no design vocabulary required.
+2. Agent asks a short round of clarifying questions: purpose of the screen, key actions, platform (mobile/web), audience, must-have elements. Guided, not a blank canvas.
+3. Agent generates a **layout spec** (structured JSON: sections, components, rough positions/hierarchy) and renders it deterministically as a low-fidelity wireframe (boxes-and-labels HTML/SVG, Balsamiq-style) — more reliable and faster to demo live than raw image generation, and it's directly viewable in a browser, which satisfies the "hosted project" recommendation.
+4. User gives feedback in plain language ("move nav to top," "one CTA per screen," "I don't like this for onboarding") — agent revises the spec and re-renders, in the same session.
+5. **Memory** (the track-defining piece): the agent extracts durable preference signals from your corrections — "prefers top nav over sidebar," "single-CTA-per-screen," brand color — and persists them to a style profile in Firestore, so the *next* session starts closer to your taste instead of zero.
+6. Optional bonus for a stronger demo: a 2-question taste calibration on first run (show two layout options, pick one) to seed the profile before you've corrected anything.
+
+### Architecture
+Cloud Run (ADK conversational agent, session state) → Gemini 3.6 Flash on Vertex's global endpoint, same as Career Agent (drives clarifying questions, spec generation, interprets feedback deltas) → Firestore (persistent style profile + wireframe version history) → a small rendering layer (layout JSON → HTML/SVG) → simple web UI for viewing/iterating.
+
+Reuse from Career Agent: same GCP project (`allthingsagentic-505213`), same Firestore instance under its own collections, same Vertex model config, and the same `load_dotenv`/`global`-endpoint setup that Phase 0 pinned down. This is a separate agent service, not a second workflow inside the existing one — Career Agent's `main.py` is a stateless single-pass runner, whereas this one is genuinely multi-turn and will need a real (non-`InMemory`) SessionService to survive across requests.
+
+### MVP cut line
+Must-have: one clarifying round, spec generation, rendered wireframe, at least one feedback-revision loop, and the preference persisting to Firestore and visibly affecting a second session (this is what proves "adapts," not just "chats"). Multi-screen flows, exports, and the taste-calibration quiz are stretch goals.
+
+---
+
+## Tech requirement checklist (applies to both submissions)
 
 - [x] Gemini 3.5 or newer via Gemini API or Vertex AI — running on `gemini-3.6-flash` via Vertex. Note it is only served on Vertex's **global** endpoint; regional locations 404.
-- [x] At least one Google agent framework — ADK, used by both workflows
+- [x] At least one Google agent framework — ADK for both submissions, per this plan
 - [ ] At least one GCP infra service — Firestore is live (native mode, `us-central1`, project `allthingsagentic-505213`); Cloud Run deployment still pending
 - [ ] Demo video shows the backend actually running on Google Cloud (Cloud Run dashboard / Vertex AI logs / the `.run.app` URL)
 - [ ] Architecture diagram, README with spin-up steps, code repo
@@ -85,5 +109,5 @@ Must-have for a working demo: Job workflow, one or two board sources, matching +
 2. ~~**Contact-finding**~~ — Resolved: start with publicly listed info; fall back to an email-finder API (Hunter.io) when public info isn't reliable enough.
 3. ~~**Freelance leads**~~ — Resolved: MVP leans on public hiring boards first; target-list upload is a later add-on.
 4. ~~**Send channel**~~ — Resolved: Gmail API (your account) for the notification digest and any auto-sent plain-email outreach.
-5. ~~**Build order**~~ — Resolved: Job workflow first, then Freelance.
-6. ~~**Second submission**~~ — Resolved (Aug 11): the Wireframe Assistant (Collaborative Partner track) is **cut**. This is a single-submission project now. Reasoning: at the point of the decision the Job workflow had only just run end-to-end for the first time, with the volume/pre-filter work and the entire Cloud Run deployment still ahead of it. A second track would have competed for the days that make the Taskmaster submission actually good, and the Taskmaster rubric rewards depth on one pipeline over breadth across two. Everything freed up goes into Career Agent.
+5. ~~**Build order**~~ — Resolved: Job workflow, then Freelance, then Wireframe Assistant, in that order.
+6. ~~**Second submission**~~ — Resolved (Aug 11): the Wireframe Assistant stays **in scope**. The hackathon allows two submissions, so entering the Collaborative Partner track costs nothing but build time and is a second, independent shot at placing. It stays strictly second in the build order: it starts only once Career Agent's Job workflow is deployed and filmed, because a half-finished second entry is worth less than a finished first one. If the calendar gets tight, this is what gets dropped — see the trim order in the MVP cut lines.
