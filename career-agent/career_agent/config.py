@@ -19,6 +19,25 @@ load_dotenv()
 GOOGLE_CLOUD_PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", "")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
 
+# --- 429 retry ---------------------------------------------------------------
+# Gemini on Vertex runs on dynamic shared quota: there is no per-project limit
+# to raise, and quota increase requests do not apply. A 429 means the shared
+# pool was busy at that moment, and the documented remedy is to retry.
+# https://cloud.google.com/vertex-ai/generative-ai/docs/resources/dynamic-shared-quota
+#
+# Without this a single 429 aborts the whole run. It cost a run 11 jobs before
+# dedupe was moved after evaluation.
+RETRY_ATTEMPTS = int(os.environ.get("RETRY_ATTEMPTS", "5"))
+RETRY_INITIAL_DELAY = float(os.environ.get("RETRY_INITIAL_DELAY", "2"))
+RETRY_MAX_DELAY = float(os.environ.get("RETRY_MAX_DELAY", "60"))
+
+# --- Cost accounting ------------------------------------------------------------
+# USD per 1M tokens for GEMINI_MODEL, from the Vertex generative AI pricing page
+# (gemini-3.6-flash, global endpoint, standard tier, as of 2026-08-11). Update
+# these if you change model or tier -- nothing detects a stale price.
+PRICE_INPUT_PER_1M_USD = float(os.environ.get("PRICE_INPUT_PER_1M_USD", "1.50"))
+PRICE_OUTPUT_PER_1M_USD = float(os.environ.get("PRICE_OUTPUT_PER_1M_USD", "7.50"))
+
 # --- Job sources: mid/large-company career portals ---------------------------
 # Free, public, per-company ATS board APIs -- no scraping, no key needed.
 # Find a company's slug from its careers page URL, e.g.

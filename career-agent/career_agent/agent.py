@@ -9,6 +9,8 @@ Run it two ways:
 from __future__ import annotations
 
 from google.adk.agents import LlmAgent
+from google.adk.models.google_llm import Gemini
+from google.genai import types as genai_types
 
 from . import config
 from .tools.job_tools import (
@@ -65,8 +67,23 @@ doesn't support -- if you're not sure something is true of the candidate,
 leave it out rather than guess.
 """
 
-root_agent = LlmAgent(
+# Retry rather than a bare model string. Gemini on Vertex uses dynamic shared
+# quota, so a 429 is transient pool contention, not a limit that can be raised
+# -- retrying is the documented fix, and without it one 429 kills the run.
+_MODEL = Gemini(
     model=config.GEMINI_MODEL,
+    retry_options=genai_types.HttpRetryOptions(
+        attempts=config.RETRY_ATTEMPTS,
+        initial_delay=config.RETRY_INITIAL_DELAY,
+        max_delay=config.RETRY_MAX_DELAY,
+        exp_base=2,
+        jitter=1,
+        http_status_codes=[429, 503, 504],
+    ),
+)
+
+root_agent = LlmAgent(
+    model=_MODEL,
     name="career_job_agent",
     description=(
         "Finds new job listings from mid/large-company career portals and "

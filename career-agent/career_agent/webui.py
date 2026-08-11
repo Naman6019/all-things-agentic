@@ -173,7 +173,18 @@ def _stats(summary: dict) -> str:
     errors = summary.get("source_errors") or {}
     if errors:
         line += f". Sources that failed: {', '.join(errors)}"
-    return f'<div class="stats">{escape(line)}.</div>'
+    line += "."
+
+    tokens = summary.get("tokens") or {}
+    if tokens.get("total"):
+        line += (
+            f" It used {tokens['total']:,} tokens "
+            f"({tokens.get('input', 0):,} in, {tokens.get('output', 0):,} out, "
+            f"{tokens.get('thoughts', 0):,} thinking) on {summary.get('model', 'the model')}, "
+            f"costing about ${summary.get('cost_usd', 0):.3f}. Billing is in INR at your "
+            "account's conversion rate."
+        )
+    return f'<div class="stats">{escape(line)}</div>'
 
 
 _QUICK_ADD_FORM = """

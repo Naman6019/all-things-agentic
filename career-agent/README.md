@@ -117,9 +117,37 @@ own auth check on top of that yet, so don't skip it.
     description, so each one costs a second request. Those are fetched lazily
     for only the jobs that survive the pre-filter and the per-run cap.
   - The SmartRecruiters list is one page of 100; pagination isn't implemented.
-- **Vertex quota is the current ceiling on `MAX_JOBS_PER_RUN`.** A run of 25
-  jobs hit `429 RESOURCE_EXHAUSTED` partway through on a new GCP project.
-  The cap is set to 10; raise it after requesting a Vertex AI quota increase.
+- **429s are handled with retries, not a quota increase.** Gemini on Vertex
+  runs on [dynamic shared
+  quota](https://cloud.google.com/vertex-ai/generative-ai/docs/resources/dynamic-shared-quota):
+  there is no per-project limit to raise and quota-increase requests do not
+  apply, so a 429 means the shared pool was momentarily busy. The model is
+  configured with exponential backoff (`RETRY_ATTEMPTS`,
+  `RETRY_INITIAL_DELAY`, `RETRY_MAX_DELAY`).
+
+## What a run costs
+
+`POST /run` returns measured token usage and an estimated cost, also written
+to the run doc and shown at the bottom of the review UI. A measured run:
+
+| | |
+|---|---|
+| Jobs evaluated | 10 |
+| Input tokens | 285,893 |
+| Output tokens | 3,863 (+6,192 thinking) |
+| Cost | **$0.50**, about $0.05/job |
+| Wall clock | 130s |
+
+**Input is 97% of the bill**, and most of it is re-sent context: the agent
+drives the whole loop in one conversation, so every evaluated job's
+description stays in the transcript and is re-sent on each subsequent turn.
+Evaluating each job in its own isolated call would cut this severalfold and
+is the strongest remaining argument for deterministic orchestration.
+
+Prices come from `PRICE_INPUT_PER_1M_USD` / `PRICE_OUTPUT_PER_1M_USD`, set
+from the Vertex pricing page for `gemini-3.6-flash` on the global endpoint
+(standard tier, $1.50/$7.50 per 1M as of 2026-08-11). Nothing detects a stale
+price, so update them if you change model or tier.
 - **Contact-finding is a regex + optional Hunter.io fallback**, not a real
   enrichment service. It's intentionally conservative: it only returns
   "high confidence" when it found an actual email in the posting text or

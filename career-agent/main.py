@@ -26,7 +26,7 @@ from google.adk.sessions import InMemorySessionService
 from google.genai import types
 from pydantic import BaseModel
 
-from career_agent import quickadd, webui
+from career_agent import config, quickadd, webui
 from career_agent.agent import root_agent
 from career_agent.storage import firestore_store
 from career_agent.tools import job_tools
@@ -127,10 +127,36 @@ async def run_pipeline():
     message = types.Content(role="user", parts=[types.Part(text="Run the job search pipeline.")])
 
     event_count = 0
-    async for _event in runner.run_async(user_id=user_id, session_id=session_id, new_message=message):
+    tokens = {"input": 0, "output": 0, "thoughts": 0, "total": 0}
+    async for event in runner.run_async(user_id=user_id, session_id=session_id, new_message=message):
         event_count += 1
+        # Token usage is only visible on the events; there is no per-run total
+        # from the SDK. Accumulating here is what makes cost per run knowable
+        # without going to Cloud Billing, which lags ~24h.
+        usage = getattr(event, "usage_metadata", None)
+        if usage:
+            tokens["input"] += usage.prompt_token_count or 0
+            tokens["output"] += usage.candidates_token_count or 0
+            tokens["thoughts"] += getattr(usage, "thoughts_token_count", 0) or 0
+            tokens["total"] += usage.total_token_count or 0
 
-    return {"run_id": run_id, "event_count": event_count}
+    # Thinking tokens bill at the output rate.
+    billed_output = tokens["output"] + tokens["thoughts"]
+    cost_usd = (
+        tokens["input"] / 1_000_000 * config.PRICE_INPUT_PER_1M_USD
+        + billed_output / 1_000_000 * config.PRICE_OUTPUT_PER_1M_USD
+    )
+    firestore_store.save_run_summary(
+        run_id,
+        {"tokens": tokens, "cost_usd": round(cost_usd, 4), "model": config.GEMINI_MODEL},
+    )
+
+    return {
+        "run_id": run_id,
+        "event_count": event_count,
+        "tokens": tokens,
+        "estimated_cost_usd": round(cost_usd, 4),
+    }
 
 
 if __name__ == "__main__":
