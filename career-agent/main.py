@@ -17,14 +17,16 @@ who finds the URL.
 from __future__ import annotations
 
 import uuid
+from urllib.parse import quote
 
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Form, HTTPException
+from fastapi.responses import HTMLResponse, RedirectResponse
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
+from pydantic import BaseModel
 
-from career_agent import webui
+from career_agent import quickadd, webui
 from career_agent.agent import root_agent
 from career_agent.storage import firestore_store
 from career_agent.tools import job_tools
@@ -40,14 +42,14 @@ def healthz():
 
 
 @app.get("/", response_class=HTMLResponse)
-def review_ui(status: str = "matched"):
+def review_ui(status: str = "matched", queued: int = 0, error: str = ""):
     """Read-only review page: matched jobs, their JD links, and why they matched.
 
     Read-only on purpose. The guardrail this project is built around is that a
     human performs the actual apply/send, so this page links out to the posting
     rather than submitting anything.
     """
-    return webui.render(status)
+    return webui.render(status, queued=bool(queued), error=error)
 
 
 @app.get("/api/jobs")
@@ -55,6 +57,50 @@ def api_jobs(status: str = "matched"):
     """The same data as JSON, for anything that wants to consume it directly."""
     statuses = ["matched", "drafted"] if status == "matched" else [status]
     return {"status": status, "jobs": firestore_store.get_applications_by_status(statuses)}
+
+
+class QuickAddRequest(BaseModel):
+    url: str = ""
+    text: str = ""
+    title: str = ""
+    company: str = ""
+
+
+async def _queue_quick_add(url: str, text: str, title: str, company: str) -> str:
+    async with job_tools._client() as client:
+        job = await quickadd.build(url=url, text=text, title=title, company=company, client=client)
+    firestore_store.enqueue_quick_add(job)
+    return job.job_id
+
+
+@app.post("/api/quick-add")
+async def api_quick_add(payload: QuickAddRequest):
+    """Queues one user-supplied posting for the next run.
+
+    Paste the posting text for anything on LinkedIn/Indeed/Glassdoor/Wellfound;
+    a Greenhouse, Lever or Ashby URL is resolved through its public API. See
+    career_agent/quickadd.py for why the distinction exists.
+    """
+    try:
+        job_id = await _queue_quick_add(payload.url, payload.text, payload.title, payload.company)
+    except quickadd.QuickAddError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return {"queued": job_id, "note": "Evaluated on the next POST /run."}
+
+
+@app.post("/quick-add")
+async def quick_add_form(
+    url: str = Form(""),
+    text: str = Form(""),
+    title: str = Form(""),
+    company: str = Form(""),
+):
+    """Form target for the review UI's paste box; redirects back to the page."""
+    try:
+        await _queue_quick_add(url, text, title, company)
+    except quickadd.QuickAddError as e:
+        return RedirectResponse(f"/?status=matched&error={quote(str(e))}", status_code=303)
+    return RedirectResponse("/?status=matched&queued=1", status_code=303)
 
 
 @app.post("/run")

@@ -74,6 +74,25 @@ pre {
   padding: 12px; margin: 10px 0 0; overflow-x: auto;
 }
 .empty { color: var(--muted); text-align: center; padding: 48px 0; }
+.add { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+       padding: 14px 16px; margin-bottom: 20px; }
+.add summary { font-size: 13.5px; color: var(--ink); font-weight: 500; }
+.add details { border: 0; margin: 0; padding: 0; }
+.add .row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.add input, .add textarea {
+  font: inherit; font-size: 13.5px; color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; width: 100%;
+}
+.add input { flex: 1 1 180px; width: auto; }
+.add textarea { margin-top: 8px; min-height: 96px; resize: vertical; }
+.add button {
+  font: inherit; font-size: 13.5px; font-weight: 500; cursor: pointer; margin-top: 10px;
+  color: var(--bg); background: var(--ink); border: 0; border-radius: 6px; padding: 8px 16px;
+}
+.add .hint { color: var(--muted); font-size: 12.5px; margin-top: 8px; }
+.flash { border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-size: 13.5px; }
+.flash.ok { background: var(--chip); color: var(--accent); }
+.flash.err { background: var(--chip); color: var(--bad); }
 .stats { color: var(--muted); font-size: 12.5px; border-top: 1px solid var(--line);
          margin-top: 28px; padding-top: 14px; }
 """
@@ -157,7 +176,38 @@ def _stats(summary: dict) -> str:
     return f'<div class="stats">{escape(line)}.</div>'
 
 
-def render(status: str = "matched") -> str:
+_QUICK_ADD_FORM = """
+<div class="add"><details><summary>+ Add a posting you found yourself</summary>
+<form method="post" action="/quick-add">
+  <div class="row">
+    <input name="url" placeholder="Posting URL (optional)" />
+    <input name="title" placeholder="Job title (optional)" />
+    <input name="company" placeholder="Company (optional)" />
+  </div>
+  <textarea name="text" placeholder="Paste the posting text here."></textarea>
+  <div class="hint">
+    Greenhouse, Lever and Ashby links are fetched automatically from their public APIs,
+    so a URL alone is enough. For LinkedIn, Indeed, Glassdoor or Wellfound, paste the
+    text &mdash; this agent will not fetch those pages, because automated retrieval
+    there puts your account at risk. The URL is still saved as the link to apply from.
+  </div>
+  <button type="submit">Queue for next run</button>
+</form></details></div>
+"""
+
+
+def _flash(queued: bool, error: str) -> str:
+    if error:
+        return f'<div class="flash err">{escape(error)}</div>'
+    if queued:
+        return (
+            '<div class="flash ok">Queued. It will be evaluated on the next run '
+            "(POST /run), ahead of the feed results and without title filtering.</div>"
+        )
+    return ""
+
+
+def render(status: str = "matched", queued: bool = False, error: str = "") -> str:
     """Renders the review page for one status tab."""
     active = next((t for t in _STATUS_TABS if t[0] == status), _STATUS_TABS[0])
     apps = firestore_store.get_applications_by_status(active[2])
@@ -182,6 +232,7 @@ def render(status: str = "matched") -> str:
         f'<div class="sub">{len(apps)} {escape(active[1].lower())} '
         "&middot; the agent drafts and finds; you open the JD and decide</div>"
         f'<div class="tabs">{tabs}</div>'
+        f"{_flash(queued, error)}{_QUICK_ADD_FORM}"
         f"{body}{_stats(summary)}"
         "</div></body></html>"
     )

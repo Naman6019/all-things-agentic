@@ -7,6 +7,7 @@ Collections:
 """
 from __future__ import annotations
 
+from dataclasses import asdict
 from datetime import datetime, timezone
 
 from google.cloud import firestore
@@ -64,6 +65,38 @@ def mark_job_seen(job_id: str) -> None:
     db.collection("jobs_seen").document(job_id).set(
         {"seen_at": datetime.now(timezone.utc).isoformat()}, merge=True
     )
+
+
+def enqueue_quick_add(job: JobListing) -> None:
+    """Queues a user-supplied posting for the next run to evaluate.
+
+    Queued rather than evaluated inline so it goes through exactly the same
+    evaluation path as everything else -- one place where verdicts are formed,
+    not two that can drift apart.
+    """
+    db = get_client()
+    db.collection("quick_add_queue").document(job.job_id).set(asdict(job))
+
+
+def drain_quick_adds() -> list[JobListing]:
+    """Returns queued quick-adds and clears the queue.
+
+    Deleted on read: a quick-add is a one-shot request. If its run dies before
+    the verdict is stored the job is lost from the queue, which is the same
+    trade-off as any at-most-once delivery -- and re-pasting is trivial,
+    whereas a queue that never drains would re-evaluate forever.
+    """
+    db = get_client()
+    jobs = []
+    for doc in db.collection("quick_add_queue").stream():
+        data = doc.to_dict() or {}
+        try:
+            jobs.append(JobListing(**data))
+        except TypeError:
+            continue  # schema drift on an old queued doc; drop it rather than crash the run
+        finally:
+            doc.reference.delete()
+    return jobs
 
 
 def save_job_listing(job: JobListing) -> None:

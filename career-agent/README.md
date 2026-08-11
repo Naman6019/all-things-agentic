@@ -73,6 +73,24 @@ the same data as JSON.
 It is read-only on purpose: it links out to the posting rather than
 submitting anything, per the guardrail this project is built around.
 
+**Quick-add** -- for anything the feeds miss. Use the "Add a posting you
+found yourself" box on the review page, or:
+```bash
+curl -X POST http://localhost:8080/api/quick-add \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"https://www.linkedin.com/jobs/view/123","text":"<paste posting here>"}'
+```
+Quick-added postings jump the queue on the next run and skip the title
+pre-filter entirely -- you chose the job deliberately, so a title heuristic
+has no business overruling you.
+
+A Greenhouse, Lever or Ashby URL is enough on its own; it gets resolved
+through the same public API the pipeline already reads. **LinkedIn, Indeed,
+Glassdoor and Wellfound URLs are never fetched** -- paste the posting text
+and the URL is kept as the link to apply from. Automated retrieval on those
+sites is what gets accounts banned, which is the whole reason they aren't
+sources.
+
 ## Deploy to Cloud Run
 
 ```bash

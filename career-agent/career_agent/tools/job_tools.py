@@ -87,6 +87,11 @@ async def fetch_new_jobs(sources: list[str] | None = None) -> list[dict]:
         remote, url, and description. These have already been screened for
         title relevance, so evaluate every job returned here.
     """
+    # Postings the user added by hand jump the queue and skip the title
+    # pre-filter entirely: they chose this job deliberately, so a title-based
+    # guess has no business overruling them.
+    quick_adds = firestore_store.drain_quick_adds()
+
     jobs, source_errors = await _fetch_all_sources(sources)
     unseen = firestore_store.find_unseen(jobs)
 
@@ -96,7 +101,7 @@ async def fetch_new_jobs(sources: list[str] | None = None) -> list[dict]:
     # Cap after the pre-filter, so the run's budget is spent on plausible jobs
     # rather than on whatever the feed happened to list first. Cap before
     # marking seen, so anything past it stays unseen for a later run.
-    batch = relevant[: config.MAX_JOBS_PER_RUN]
+    batch = (quick_adds + relevant)[: config.MAX_JOBS_PER_RUN]
 
     # Only now are descriptions worth paying for -- see fetch_smartrecruiters.
     async with _client() as client:
@@ -116,6 +121,7 @@ async def fetch_new_jobs(sources: list[str] | None = None) -> list[dict]:
         current_run_id.get(),
         {
             "fetched": len(jobs),
+            "quick_added": len(quick_adds),
             "unseen": len(unseen),
             "relevant_after_prefilter": len(relevant),
             "taken_this_run": len(batch),
