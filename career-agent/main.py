@@ -45,7 +45,8 @@ async def run_pipeline():
     Firestore (not agent session state) is what makes the pipeline
     idempotent across runs. InMemorySessionService is enough here; a
     Firestore-backed SessionService would only matter if this became a
-    multi-turn conversational agent (like the Wireframe Assistant).
+    multi-turn conversational agent that had to resume a session across
+    separate requests.
     """
     run_id = uuid.uuid4().hex[:8]
     job_tools.current_run_id.set(run_id)

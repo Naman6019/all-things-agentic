@@ -8,8 +8,8 @@ emails you a single digest. See `../hackathon-project-plan.md` for the full
 design rationale (including why this doesn't scrape LinkedIn/Indeed).
 
 This is the first of the two Career Agent workflows (Job Search now,
-Freelance Client Pipeline next). The Wireframe Assistant is a separate
-project/track and lives elsewhere.
+Freelance Client Pipeline next). Career Agent is the project's single
+hackathon submission, on the Taskmaster track.
 
 ## How it works
 
