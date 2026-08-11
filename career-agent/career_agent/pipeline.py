@@ -28,20 +28,36 @@ from .tools import job_tools, notify
 APP_NAME = "career-agent"
 
 
-def _blank_usage() -> dict[str, int]:
-    return {"input": 0, "output": 0, "thoughts": 0, "total": 0}
+def _accumulate(by_model: dict[str, dict[str, int]], model: str, usage) -> None:
+    """Adds one call's usage to its model's bucket.
 
-
-def _accumulate(into: dict[str, int], usage) -> None:
+    Kept per model, not pooled: the two stages can run different models at
+    different rates, and a single pooled total costed at one rate would be
+    silently wrong -- which defeats the point of measuring cost at all.
+    """
     if not usage:
         return
-    into["input"] += usage.prompt_token_count or 0
-    into["output"] += usage.candidates_token_count or 0
-    into["thoughts"] += getattr(usage, "thoughts_token_count", 0) or 0
-    into["total"] += usage.total_token_count or 0
+    bucket = by_model.setdefault(model, {"input": 0, "output": 0, "thoughts": 0, "total": 0})
+    bucket["input"] += usage.prompt_token_count or 0
+    bucket["output"] += usage.candidates_token_count or 0
+    bucket["thoughts"] += getattr(usage, "thoughts_token_count", 0) or 0
+    bucket["total"] += usage.total_token_count or 0
 
 
-async def _ask(llm_agent, prompt: str, schema, usage: dict[str, int]):
+def _summarize_cost(by_model: dict[str, dict[str, int]]) -> tuple[float, dict, dict]:
+    """Returns (total USD, per-model cost, combined token totals)."""
+    per_model_cost: dict[str, float] = {}
+    combined = {"input": 0, "output": 0, "thoughts": 0, "total": 0}
+    for model, tokens in by_model.items():
+        # Thinking bills at the output rate.
+        billed_output = tokens["output"] + tokens["thoughts"]
+        per_model_cost[model] = round(config.cost_usd(model, tokens["input"], billed_output), 4)
+        for key in combined:
+            combined[key] += tokens[key]
+    return round(sum(per_model_cost.values()), 4), per_model_cost, combined
+
+
+async def _ask(llm_agent, model: str, prompt: str, schema, usage: dict[str, dict[str, int]]):
     """One model call in its own session, validated against `schema`.
 
     A fresh session per call is the whole cost story: the job in this prompt is
@@ -56,7 +72,7 @@ async def _ask(llm_agent, prompt: str, schema, usage: dict[str, int]):
 
     text = ""
     async for event in runner.run_async(user_id="pipeline", session_id=session_id, new_message=message):
-        _accumulate(usage, getattr(event, "usage_metadata", None))
+        _accumulate(usage, model, getattr(event, "usage_metadata", None))
         content = getattr(event, "content", None)
         if content and content.parts:
             for part in content.parts:
@@ -87,8 +103,9 @@ def _job_block(job: JobListing) -> str:
 
 async def run_once(run_id: str) -> dict:
     """Runs one full pass and returns what it did, including token usage."""
-    usage = _blank_usage()
-    jobs = await job_tools.collect_new_jobs(run_id)
+    usage: dict[str, dict[str, int]] = {}
+    evaluator = config.evaluator_fingerprint()
+    jobs = await job_tools.collect_new_jobs(run_id, evaluator=evaluator)
 
     profile_block = _profile_block()
     matched = 0
@@ -96,6 +113,7 @@ async def run_once(run_id: str) -> dict:
     for job in jobs:
         verdict: JobVerdict = await _ask(
             agent.evaluator_agent,
+            config.EVALUATOR_MODEL,
             f"CANDIDATE PROFILE\n{profile_block}\n\nJOB POSTING\n{_job_block(job)}",
             JobVerdict,
             usage,
@@ -110,8 +128,10 @@ async def run_once(run_id: str) -> dict:
                 reasoning=verdict.reasoning,
             ),
         )
-        # Claimed only now that a verdict is durably stored.
-        firestore_store.mark_job_seen(job.job_id)
+        # Claimed only now that a verdict is durably stored. The evaluator
+        # fingerprint rides along so a skip can be revisited if the model or
+        # the profile changes; see firestore_store.find_unseen.
+        firestore_store.mark_job_seen(job.job_id, matched=verdict.match, evaluator=evaluator)
 
         if not verdict.match:
             continue
@@ -120,6 +140,7 @@ async def run_once(run_id: str) -> dict:
         contact = await job_tools.find_hiring_contact(job.company, job.description, job.url)
         drafted: DraftedMaterials = await _ask(
             agent.drafter_agent,
+            config.DRAFTER_MODEL,
             f"CANDIDATE PROFILE\n{profile_block}\n\nJOB POSTING\n{_job_block(job)}",
             DraftedMaterials,
             usage,
@@ -134,14 +155,17 @@ async def run_once(run_id: str) -> dict:
             )
         )
 
-    billed_output = usage["output"] + usage["thoughts"]
-    cost_usd = round(
-        usage["input"] / 1_000_000 * config.PRICE_INPUT_PER_1M_USD
-        + billed_output / 1_000_000 * config.PRICE_OUTPUT_PER_1M_USD,
-        4,
-    )
+    total_cost, cost_by_model, tokens = _summarize_cost(usage)
     firestore_store.save_run_summary(
-        run_id, {"tokens": usage, "cost_usd": cost_usd, "model": config.GEMINI_MODEL}
+        run_id,
+        {
+            "tokens": tokens,
+            "tokens_by_model": usage,
+            "cost_by_model": cost_by_model,
+            "cost_usd": total_cost,
+            "models": {"evaluator": config.EVALUATOR_MODEL, "drafter": config.DRAFTER_MODEL},
+            "unpriced_models": sorted(m for m in usage if m not in config.MODEL_PRICES),
+        },
     )
 
     # Sent here, exactly once, because this line runs exactly once.
@@ -158,6 +182,7 @@ async def run_once(run_id: str) -> dict:
         "evaluated": len(jobs),
         "matched": matched,
         "skipped": len(jobs) - matched,
-        "tokens": usage,
-        "estimated_cost_usd": cost_usd,
+        "tokens_by_model": usage,
+        "cost_by_model": cost_by_model,
+        "estimated_cost_usd": total_cost,
     }

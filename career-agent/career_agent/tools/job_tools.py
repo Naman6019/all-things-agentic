@@ -64,15 +64,21 @@ async def _fetch_all_sources(sources: list[str] | None = None) -> tuple[list[Job
     return jobs, errors
 
 
-async def collect_new_jobs(run_id: str, sources: list[str] | None = None) -> list[JobListing]:
-    """Returns this run's batch of jobs to evaluate, and records how it was chosen."""
+async def collect_new_jobs(
+    run_id: str, evaluator: str = "", sources: list[str] | None = None
+) -> list[JobListing]:
+    """Returns this run's batch of jobs to evaluate, and records how it was chosen.
+
+    `evaluator` identifies the model+profile about to judge these jobs, so
+    find_unseen can offer up jobs a *different* evaluator previously skipped.
+    """
     # Postings the user added by hand jump the queue and skip the title
     # pre-filter entirely: they chose this job deliberately, so a title-based
     # guess has no business overruling them.
     quick_adds = firestore_store.drain_quick_adds()
 
     jobs, source_errors = await _fetch_all_sources(sources)
-    unseen = firestore_store.find_unseen(jobs)
+    unseen = firestore_store.find_unseen(jobs, evaluator=evaluator)
 
     profile = config.load_candidate_profile()
     relevant, filtered_out = matching.prefilter(unseen, profile)
@@ -101,6 +107,7 @@ async def collect_new_jobs(run_id: str, sources: list[str] | None = None) -> lis
             "deferred_to_next_run": max(0, len(relevant) - len(batch)),
             "filtered_out": filtered_out,
             "source_errors": source_errors,
+            "evaluator": evaluator,
         },
     )
     return batch

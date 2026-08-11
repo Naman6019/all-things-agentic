@@ -180,10 +180,29 @@ def _stats(summary: dict) -> str:
         line += (
             f" It used {tokens['total']:,} tokens "
             f"({tokens.get('input', 0):,} in, {tokens.get('output', 0):,} out, "
-            f"{tokens.get('thoughts', 0):,} thinking) on {summary.get('model', 'the model')}, "
+            f"{tokens.get('thoughts', 0):,} thinking), "
             f"costing about ${summary.get('cost_usd', 0):.3f}. Billing is in INR at your "
             "account's conversion rate."
         )
+        models = summary.get("models") or {}
+        if models:
+            line += (
+                f" Evaluation ran on {models.get('evaluator', '?')}, "
+                f"drafting on {models.get('drafter', '?')}"
+            )
+            # Per-model split is the point of running two: without it you cannot
+            # tell whether a cheap evaluator actually paid off.
+            per_model = summary.get("cost_by_model") or {}
+            if len(per_model) > 1:
+                split = ", ".join(f"{m} ${c:.3f}" for m, c in sorted(per_model.items()))
+                line += f" ({split})"
+            line += "."
+        unpriced = summary.get("unpriced_models") or []
+        if unpriced:
+            line += (
+                f" Note: no price is configured for {', '.join(unpriced)}, "
+                "so this figure uses a fallback rate and may be wrong."
+            )
     return f'<div class="stats">{escape(line)}</div>'
 
 

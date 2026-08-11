@@ -28,28 +28,47 @@ def get_client() -> firestore.Client:
     return _client
 
 
-def find_unseen(jobs: list[JobListing]) -> list[JobListing]:
-    """Returns the jobs not already recorded in jobs_seen. Read-only.
+def find_unseen(jobs: list[JobListing], evaluator: str = "") -> list[JobListing]:
+    """Returns the jobs still worth evaluating. Read-only.
 
-    Read-only on purpose: a job is marked seen by mark_job_seen once it has an
-    evaluation, never at fetch time. Writing here would burn every job over the
-    per-run cap, and every job still in flight when a run fails.
+    A job counts as seen when it has a marker AND either it matched, or it was
+    skipped by the same evaluator that is about to run. A job SKIPPED by a
+    different model or against a different candidate profile is offered up
+    again, because a skip is a judgment call and the thing that made it has
+    changed. Matched jobs are never resurfaced -- their verdict and drafts
+    already exist.
 
-    Reads in batched get_all calls rather than one round trip per job; a single
-    Greenhouse board can return 500+ postings.
+    Without this, trialling a cheaper evaluator is a one-way door: a wrong skip
+    is invisible and permanent, since nothing ever surfaces the job again to
+    reveal the mistake. Set REEVALUATE_SKIPS_ON_CHANGE=false for the old
+    behaviour of one verdict per job, forever.
+
+    Read-only on purpose: marking happens in mark_job_seen once a verdict
+    exists, never at fetch time. Batched get_all rather than one round trip per
+    job; a single Greenhouse board can return 500+ postings.
     """
     db = get_client()
     refs = [db.collection("jobs_seen").document(job.job_id) for job in jobs]
-    seen_ids: set[str] = set()
+    claimed: set[str] = set()
     for start in range(0, len(refs), _READ_CHUNK):
         for snapshot in db.get_all(refs[start : start + _READ_CHUNK]):
-            if snapshot.exists:
-                seen_ids.add(snapshot.id)
-    return [job for job in jobs if job.job_id not in seen_ids]
+            if not snapshot.exists:
+                continue
+            marker = snapshot.to_dict() or {}
+            if not config.REEVALUATE_SKIPS_ON_CHANGE:
+                claimed.add(snapshot.id)
+                continue
+            # Markers written before this field existed have no `matched` key.
+            # Treat them as claimed rather than replaying the entire backlog.
+            if marker.get("matched", True):
+                claimed.add(snapshot.id)
+            elif marker.get("evaluator", "") == evaluator:
+                claimed.add(snapshot.id)
+    return [job for job in jobs if job.job_id not in claimed]
 
 
-def mark_job_seen(job_id: str) -> None:
-    """Records one job in jobs_seen, so later runs skip it.
+def mark_job_seen(job_id: str, matched: bool = True, evaluator: str = "") -> None:
+    """Records one job's verdict in jobs_seen, so later runs can skip it.
 
     Called only after that job's evaluation has been written -- never at fetch
     time. Marking at fetch time meant any mid-run failure silently burned every
@@ -57,13 +76,21 @@ def mark_job_seen(job_id: str) -> None:
     unevaluated, so they never reached a digest. That is not hypothetical. A run
     hit a Vertex 429 after 14 of 25 jobs and orphaned the remaining 11.
 
+    `matched` and `evaluator` are what let find_unseen revisit a skip when the
+    model or profile changes.
+
     The trade-off is that two runs overlapping in time can both pick up the
     same job. Scheduled runs are hours apart, and a duplicate evaluation is a
     far cheaper failure than a job silently lost forever.
     """
     db = get_client()
     db.collection("jobs_seen").document(job_id).set(
-        {"seen_at": datetime.now(timezone.utc).isoformat()}, merge=True
+        {
+            "seen_at": datetime.now(timezone.utc).isoformat(),
+            "matched": matched,
+            "evaluator": evaluator,
+        },
+        merge=True,
     )
 
 

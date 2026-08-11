@@ -1,8 +1,10 @@
 """Environment + static configuration for the Career Agent job pipeline."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+from dataclasses import asdict
 from functools import lru_cache
 from pathlib import Path
 
@@ -19,6 +21,22 @@ load_dotenv()
 GOOGLE_CLOUD_PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", "")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
 
+# The pipeline's two stages have very different economics, so they get their
+# own model. Discovery -- judging whether a posting rules the candidate out --
+# is ~89% of a run's cost, because it runs once per job while drafting runs
+# only once per match. Drafting is where output quality is actually visible to
+# a human, so it stays on the stronger model.
+#
+# Both default to GEMINI_MODEL, so setting neither changes nothing.
+EVALUATOR_MODEL = os.environ.get("EVALUATOR_MODEL", GEMINI_MODEL)
+DRAFTER_MODEL = os.environ.get("DRAFTER_MODEL", GEMINI_MODEL)
+
+# Thinking tokens bill at the output rate and were half of a measured run's
+# cost. Gemini 3.x models think by default; setting this to "low" trades some
+# reasoning depth for a cheaper, faster evaluation. Leave unset to use the
+# model's own default. Ignored by models that do not think (the -lite tiers).
+EVALUATOR_THINKING_LEVEL = os.environ.get("EVALUATOR_THINKING_LEVEL", "") or None
+
 # --- 429 retry ---------------------------------------------------------------
 # Gemini on Vertex runs on dynamic shared quota: there is no per-project limit
 # to raise, and quota increase requests do not apply. A 429 means the shared
@@ -32,11 +50,32 @@ RETRY_INITIAL_DELAY = float(os.environ.get("RETRY_INITIAL_DELAY", "2"))
 RETRY_MAX_DELAY = float(os.environ.get("RETRY_MAX_DELAY", "60"))
 
 # --- Cost accounting ------------------------------------------------------------
-# USD per 1M tokens for GEMINI_MODEL, from the Vertex generative AI pricing page
-# (gemini-3.6-flash, global endpoint, standard tier, as of 2026-08-11). Update
-# these if you change model or tier -- nothing detects a stale price.
-PRICE_INPUT_PER_1M_USD = float(os.environ.get("PRICE_INPUT_PER_1M_USD", "1.50"))
-PRICE_OUTPUT_PER_1M_USD = float(os.environ.get("PRICE_OUTPUT_PER_1M_USD", "7.50"))
+# USD per 1M tokens, (input, output), on the Vertex global endpoint at the
+# standard tier, as of 2026-08-11. Thinking tokens bill at the output rate.
+#
+# NOTHING DETECTS A STALE PRICE. If a rate changes or you run a model that is
+# not listed here, the reported cost is silently wrong -- an unknown model
+# falls back to _FALLBACK_PRICE and is flagged in the run summary.
+MODEL_PRICES: dict[str, tuple[float, float]] = {
+    "gemini-3.6-flash": (1.50, 7.50),
+    "gemini-3.5-flash": (1.50, 9.00),
+    "gemini-3.5-flash-lite": (0.30, 2.50),
+    # Retires 2026-10-16; cheapest option until then.
+    "gemini-2.5-flash-lite": (0.10, 0.40),
+    "gemini-2.5-flash": (0.30, 2.50),
+}
+_FALLBACK_PRICE = (1.50, 7.50)
+
+
+def price_for(model: str) -> tuple[float, float]:
+    """(input, output) USD per 1M tokens, falling back to the current flash rate."""
+    return MODEL_PRICES.get(model, _FALLBACK_PRICE)
+
+
+def cost_usd(model: str, input_tokens: int, output_tokens: int) -> float:
+    """Cost of one model's usage. output_tokens must already include thinking."""
+    price_in, price_out = price_for(model)
+    return input_tokens / 1_000_000 * price_in + output_tokens / 1_000_000 * price_out
 
 # --- Job sources: mid/large-company career portals ---------------------------
 # Free, public, per-company ATS board APIs -- no scraping, no key needed.
@@ -124,3 +163,32 @@ def load_candidate_profile() -> CandidateProfile:
         )
     data = json.loads(PROFILE_PATH.read_text())
     return CandidateProfile(**data)
+
+
+# --- Re-evaluating skipped jobs -------------------------------------------------
+# A skipped job is normally never looked at again. That is fine with one trusted
+# evaluator and dangerous when trialling cheaper ones, because a wrong skip is
+# invisible and permanent -- nothing surfaces the job again to reveal the
+# mistake. With this on, a job skipped under a different model or a different
+# candidate profile is offered up again; matched jobs stay claimed either way.
+#
+# The cost is real: editing target_titles or switching EVALUATOR_MODEL puts
+# every previously skipped job back in the queue, bounded per run by
+# MAX_JOBS_PER_RUN but spread over several runs.
+REEVALUATE_SKIPS_ON_CHANGE = _enabled("REEVALUATE_SKIPS_ON_CHANGE")
+
+
+def profile_fingerprint() -> str:
+    """Short hash of the profile, so a changed profile invalidates old skips.
+
+    Covers the whole profile rather than just the requirement fields: a reworded
+    resume changes what the drafter produces, and a changed target title changes
+    what the pre-filter admits, so both are worth a fresh look.
+    """
+    payload = json.dumps(asdict(load_candidate_profile()), sort_keys=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
+
+
+def evaluator_fingerprint() -> str:
+    """Identifies what produced a verdict: this model against this profile."""
+    return f"{EVALUATOR_MODEL}:{profile_fingerprint()}"

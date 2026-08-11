@@ -79,20 +79,39 @@ _RETRY = genai_types.HttpRetryOptions(
 )
 
 
-def _model() -> Gemini:
-    return Gemini(model=config.GEMINI_MODEL, retry_options=_RETRY)
+def _model(model_name: str) -> Gemini:
+    return Gemini(model=model_name, retry_options=_RETRY)
 
 
+def _thinking(level: str | None) -> genai_types.GenerateContentConfig | None:
+    """Caps reasoning depth, when asked to.
+
+    Thinking tokens bill at the output rate and were half of a measured run's
+    cost, so this is a real lever -- but it trades away reasoning the evaluator
+    genuinely uses (inferring a years-of-experience bar from "staff-level",
+    converting currencies). Left unset by default; change it on evidence.
+    """
+    if not level:
+        return None
+    return genai_types.GenerateContentConfig(
+        thinking_config=genai_types.ThinkingConfig(thinking_level=level)
+    )
+
+
+# Evaluation runs once per job and drafting only once per match, so evaluation
+# carries ~89% of a run's cost while drafting is where quality is visible to a
+# human. Hence two models, defaulting to the same one.
 evaluator_agent = LlmAgent(
-    model=_model(),
+    model=_model(config.EVALUATOR_MODEL),
     name="job_evaluator",
     description="Judges one job posting against the candidate's requirements.",
     instruction=EVALUATOR_INSTRUCTIONS,
     output_schema=JobVerdict,
+    generate_content_config=_thinking(config.EVALUATOR_THINKING_LEVEL),
 )
 
 drafter_agent = LlmAgent(
-    model=_model(),
+    model=_model(config.DRAFTER_MODEL),
     name="application_drafter",
     description="Drafts tailored resume bullets and a cover letter for one matched job.",
     instruction=DRAFTER_INSTRUCTIONS,

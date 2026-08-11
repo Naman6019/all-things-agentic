@@ -138,16 +138,49 @@ to the run doc and shown at the bottom of the review UI. A measured run:
 | Cost | **$0.50**, about $0.05/job |
 | Wall clock | 130s |
 
-**Input is 97% of the bill**, and most of it is re-sent context: the agent
-drives the whole loop in one conversation, so every evaluated job's
-description stays in the transcript and is re-sent on each subsequent turn.
-Evaluating each job in its own isolated call would cut this severalfold and
-is the strongest remaining argument for deterministic orchestration.
+Evaluation is roughly 89% of that: it runs once per job, while drafting runs
+only once per match. Thinking tokens are about half the total, since they bill
+at the output rate.
 
-Prices come from `PRICE_INPUT_PER_1M_USD` / `PRICE_OUTPUT_PER_1M_USD`, set
-from the Vertex pricing page for `gemini-3.6-flash` on the global endpoint
-(standard tier, $1.50/$7.50 per 1M as of 2026-08-11). Nothing detects a stale
-price, so update them if you change model or tier.
+### Choosing models per stage
+
+`EVALUATOR_MODEL` and `DRAFTER_MODEL` are set independently (both default to
+`GEMINI_MODEL`), because the two stages have opposite economics: evaluation is
+high-volume and cheap-to-get-right, drafting is low-volume and the only output
+a human reads.
+
+**Benchmark before switching the evaluator.** A wrong match costs one wasted
+drafting call; a wrong skip hides a real job from you and you never find out.
+
+```bash
+python benchmark_evaluators.py --jobs 20 \
+    --models gemini-3.6-flash,gemini-3.5-flash-lite,gemini-2.5-flash-lite
+```
+
+It fetches and pre-filters through the real pipeline path, evaluates the same
+postings with each model, scores them against the first model listed, and
+prints every disagreement with both models' reasoning. It writes nothing to
+Firestore, so it is safe to re-run.
+
+**Result on 20 real postings (2026-08-11), which is why the evaluator is
+still `gemini-3.6-flash`:**
+
+| model | agreement | matches found | cost | vs ref |
+|---|---|---|---|---|
+| `gemini-3.6-flash` (reference) | — | 5 / 20 | $0.227 | — |
+| `gemini-3.5-flash-lite` | 75% | **0 / 20** | $0.029 | 7.8x |
+| `gemini-2.5-flash-lite` | 80% | 3 / 20 | $0.009 | 26.7x |
+
+Both lite tiers fail in the direction that costs you jobs: every one of
+`gemini-3.5-flash-lite`'s five disagreements is a posting it skipped that the
+reference matched, and it found no matches at all. The reasoning shows why --
+they treat *preferred* qualifications as hard requirements ("falls short of
+the preferred 8+ years"), which the instructions explicitly forbid. A ~5x
+saving is not worth an evaluator that silently discards every opportunity.
+
+Prices live in `config.MODEL_PRICES` (USD per 1M, global endpoint, standard
+tier, as of 2026-08-11). Nothing detects a stale price; an unlisted model
+falls back to the flash rate and is flagged in the run summary and the UI.
 - **Contact-finding is a regex + optional Hunter.io fallback**, not a real
   enrichment service. It's intentionally conservative: it only returns
   "high confidence" when it found an actual email in the posting text or
@@ -173,8 +206,17 @@ price, so update them if you change model or tier.
   and the UI, since a pre-filtered job never gets an individual reason.
   Note that `senior` is in the default list, which drops "Senior Engineer"
   roles asking only 3 years; remove it if you want those back.
+- **Skipped jobs are re-evaluated when the evaluator changes.** Each
+  `jobs_seen` marker records whether the job matched and which
+  model+profile produced that verdict. A job *skipped* by a different model or
+  against a different profile is offered up again; matched jobs never are.
+  This is what makes trialling a cheap evaluator reversible instead of a
+  one-way door. The cost: editing `target_titles` or switching
+  `EVALUATOR_MODEL` puts every previously skipped job back in the queue,
+  bounded per run by `MAX_JOBS_PER_RUN` but spread over several runs. Set
+  `REEVALUATE_SKIPS_ON_CHANGE=false` for one verdict per job, forever.
 - **`jobs_seen` is claimed after evaluation, not at fetch time.** A job is
-  marked seen only once `record_job_evaluation` has stored a verdict, so a
+  marked seen only once a verdict has been stored, so a
   run that dies partway leaves its in-flight jobs available to the next run.
   This was originally the other way round and cost real jobs: a run hit a
   Vertex 429 after 14 of 25 and orphaned the remaining 11 -- marked seen, so
