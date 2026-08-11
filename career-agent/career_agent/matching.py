@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import re
 
+from . import config
 from .models import CandidateProfile, JobListing
 
 # Keep '+' and '#' so "c++" and "c#" survive tokenization.
@@ -29,6 +30,7 @@ _TOKEN_RE = re.compile(r"[a-z0-9+#]+")
 
 REASON_TITLE = "title_not_in_target_titles"
 REASON_NOT_REMOTE = "remote_only_but_posting_is_onsite"
+REASON_SENIORITY = "title_above_target_seniority"
 
 
 # How many unrelated words may sit inside a matched title phrase. 1 admits
@@ -43,8 +45,21 @@ def _tokens(text: str) -> list[str]:
     Single characters go so a target like "Machine Learning Engineer I" doesn't
     hinge on a bare "i", and so punctuation variants ("AI/ML Engineer" vs
     "AI ML Engineer") normalize identically.
+
+    Trailing '+' is stripped so "Staff+ Software Engineer" tokenizes to "staff"
+    and matches a "staff" exclusion -- without this it becomes "staff+" and
+    slips through, which real Anthropic postings did. The '+' is still kept
+    when stripping it would leave nothing meaningful, so "c++" survives as a
+    token in its own right.
     """
-    return [t for t in _TOKEN_RE.findall((text or "").lower()) if len(t) > 1]
+    out = []
+    for raw in _TOKEN_RE.findall((text or "").lower()):
+        stripped = raw.rstrip("+")
+        if len(stripped) > 1:
+            out.append(stripped)
+        elif len(raw) > 1:
+            out.append(raw)
+    return out
 
 
 def _appears_in_order(target: list[str], job: list[str], max_gap: int = MAX_PHRASE_GAP) -> bool:
@@ -92,6 +107,21 @@ def title_matches(job_title: str, target_titles: list[str]) -> bool:
     return any(_appears_in_order(_tokens(t), job) for t in target_titles)
 
 
+def is_above_seniority(job_title: str, exclude_keywords: list[str]) -> bool:
+    """True if the title marks a level the candidate is not a candidate for.
+
+    Matched as contiguous phrases over tokens, not substrings: "head of" must
+    not fire on "overhead", and "vp" must not fire on "vpn". These titles pass
+    the target-title check by design -- "Staff Software Engineer" really does
+    contain "software engineer" -- so without this they reach the model and get
+    correctly rejected at full cost.
+    """
+    job = _tokens(job_title)
+    if not job:
+        return False
+    return any(_appears_in_order(_tokens(kw), job, max_gap=0) for kw in exclude_keywords)
+
+
 def prefilter(jobs: list[JobListing], profile: CandidateProfile) -> tuple[list[JobListing], dict[str, int]]:
     """Splits jobs into those worth a model call and per-reason counts of the rest.
 
@@ -107,6 +137,9 @@ def prefilter(jobs: list[JobListing], profile: CandidateProfile) -> tuple[list[J
     for job in jobs:
         if not title_matches(job.title, profile.target_titles):
             reasons[REASON_TITLE] = reasons.get(REASON_TITLE, 0) + 1
+            continue
+        if is_above_seniority(job.title, config.EXCLUDE_TITLE_KEYWORDS):
+            reasons[REASON_SENIORITY] = reasons.get(REASON_SENIORITY, 0) + 1
             continue
         if profile.remote_only and not job.remote:
             reasons[REASON_NOT_REMOTE] = reasons.get(REASON_NOT_REMOTE, 0) + 1

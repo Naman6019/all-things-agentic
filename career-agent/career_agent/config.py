@@ -55,6 +55,25 @@ ENABLE_JOBICY = _enabled("ENABLE_JOBICY")
 # context window before any evaluation happens.
 MAX_JOBS_PER_RUN = int(os.environ.get("MAX_JOBS_PER_RUN", "5"))
 
+# --- Seniority exclusions --------------------------------------------------------
+# Title phrases that put a role above the candidate's level. These pass the
+# target-title check ("Staff Software Engineer" does contain "software
+# engineer") and are then correctly rejected by the model for years of
+# experience -- but only after a full evaluation has been paid for. One run
+# spent nine of its ten slots doing exactly that.
+#
+# Deliberately conservative: "senior" is NOT excluded by default, because
+# senior roles vary from 3 years upward and some are worth a look. Add it here
+# if the digest fills with them.
+EXCLUDE_TITLE_KEYWORDS = [
+    s.strip()
+    for s in os.environ.get(
+        "EXCLUDE_TITLE_KEYWORDS",
+        "staff,principal,director,distinguished,fellow,vp,vice president,head of,chief",
+    ).split(",")
+    if s.strip()
+]
+
 # --- Contact finding -----------------------------------------------------------
 HUNTER_API_KEY = os.environ.get("HUNTER_API_KEY", "")  # optional fallback; see tools/job_tools.find_hiring_contact
 

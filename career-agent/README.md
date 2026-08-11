@@ -137,11 +137,12 @@ own auth check on top of that yet, so don't skip it.
 - **Jobs are capped per run (`MAX_JOBS_PER_RUN`, default 5) and there is no
   relevance pre-filter yet.** The cap is mandatory -- one Greenhouse board can
   return 500+ postings and the Arbeitnow feed ~175 (~1.8M characters) per page.
-  But because the cap currently takes the first N unseen jobs in feed order
-  rather than the N most relevant, a run can spend its whole budget on postings
-  nowhere near your target titles. A first smoke run against the `discord`
-  board did exactly that: 5 jobs evaluated, 5 skipped, all non-engineering.
-  Filtering on title/location before the cap is the next fix.
+  Jobs are screened before the cap on two deterministic checks, so the budget
+  goes to plausible roles: the title must match one of `target_titles`, and it
+  must not contain a phrase from `EXCLUDE_TITLE_KEYWORDS` (staff, principal,
+  director...). On a 2564-posting sweep that leaves 328 from 2564 -- 2053
+  dropped on title, 183 on seniority. Both counts are reported in the digest
+  and the UI, since a pre-filtered job never gets an individual reason.
 - **`jobs_seen` is claimed after evaluation, not at fetch time.** A job is
   marked seen only once `record_job_evaluation` has stored a verdict, so a
   run that dies partway leaves its in-flight jobs available to the next run.
