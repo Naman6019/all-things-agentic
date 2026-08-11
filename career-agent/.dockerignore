@@ -1,0 +1,16 @@
+# Dockerfile does `COPY . .`, so anything not excluded here is baked into the
+# image that gets pushed to Artifact Registry. Secrets must never land there --
+# use Secret Manager / --set-env-vars instead.
+.env
+.env.*
+!.env.example
+profile.json
+
+.venv/
+venv/
+__pycache__/
+*.pyc
+.git/
+.gitignore
+*.md
+!README.md

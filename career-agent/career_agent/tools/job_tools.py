@@ -1,0 +1,177 @@
+"""ADK tool functions for the Job Search Pipeline.
+
+Each function here becomes a callable "tool" the LlmAgent can invoke -- ADK
+builds each tool's schema from the type hints and docstring, so keep both
+accurate; the model reads them to decide when and how to call each one.
+
+Concurrency note: current_run_id is a contextvar, set once per pipeline run
+in main.py's /run handler. asyncio contextvars propagate into tasks spawned
+from that request's context, which is what makes this safe across concurrent
+Cloud Run requests -- but it hasn't been load-tested, so if you see run_ids
+bleeding across concurrent runs, that's the first place to look.
+"""
+from __future__ import annotations
+
+import asyncio
+import contextvars
+import re
+from dataclasses import asdict
+
+import httpx
+
+from .. import config
+from ..models import JobEvaluation, TailoredMaterials
+from ..sources import aggregators, ats_boards
+from ..storage import firestore_store
+
+current_run_id: contextvars.ContextVar[str] = contextvars.ContextVar("current_run_id", default="local")
+
+
+async def _fetch_all_sources(sources: list[str] | None) -> list[dict]:
+    async with httpx.AsyncClient() as client:
+        tasks = []
+        board_slugs = sources or config.GREENHOUSE_BOARD_SLUGS
+        for slug in board_slugs:
+            tasks.append(ats_boards.fetch_greenhouse(slug, client))
+        for slug in config.LEVER_BOARD_SLUGS:
+            tasks.append(ats_boards.fetch_lever(slug, client))
+        if config.ENABLE_ARBEITNOW:
+            tasks.append(aggregators.fetch_arbeitnow(client))
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+    jobs = []
+    for r in results:
+        if isinstance(r, BaseException):
+            continue  # one flaky source shouldn't fail the whole run
+        jobs.extend(r)
+    return jobs
+
+
+async def fetch_new_jobs(sources: list[str] | None = None) -> list[dict]:
+    """Fetches job listings from configured career portals and job-site aggregators, and returns only the ones not seen in a previous run.
+
+    Args:
+        sources: Optional list of Greenhouse board slugs to check instead of
+            the default configured list. Leave empty to use the configured
+            mid/large-company boards plus aggregator feeds.
+
+    Returns:
+        A list of job dicts, each with job_id, title, company, location,
+        remote, url, and description. Evaluate every job returned here.
+    """
+    jobs = await _fetch_all_sources(sources)
+    unseen = firestore_store.find_unseen(jobs)
+
+    # Cap before marking seen -- anything past the cap must stay unseen so a
+    # later run still picks it up. See config.MAX_JOBS_PER_RUN for why the cap
+    # exists at all.
+    batch = unseen[: config.MAX_JOBS_PER_RUN]
+    firestore_store.mark_seen(batch)
+    for job in batch:
+        firestore_store.save_job_listing(job)
+    return [asdict(j) for j in batch]
+
+
+def get_candidate_profile() -> dict:
+    """Returns the candidate's job-search profile: target titles, hard requirements, and resume/writing context to use when evaluating and tailoring applications."""
+    profile = config.load_candidate_profile()
+    return asdict(profile)
+
+
+def record_job_evaluation(
+    job_id: str,
+    match: bool,
+    unmet_requirements: list[str],
+    reasoning: str,
+) -> str:
+    """Records your match verdict for a job against the candidate's profile. Call this exactly once per job returned by fetch_new_jobs, whether or not it matches.
+
+    Args:
+        job_id: The job_id from fetch_new_jobs.
+        match: True only if the job meets every hard requirement in the candidate profile.
+        unmet_requirements: If match is False, a specific, human-readable list of which requirements were not met (e.g. "Requires 8+ yrs experience, profile has 5"). Empty list if match is True.
+        reasoning: A one to two sentence explanation of the verdict.
+
+    Returns:
+        A confirmation string.
+    """
+    evaluation = JobEvaluation(job_id=job_id, match=match, unmet_requirements=unmet_requirements, reasoning=reasoning)
+    firestore_store.save_evaluation(current_run_id.get(), evaluation)
+    return f"Recorded evaluation for {job_id}: match={match}"
+
+
+def find_hiring_contact(company: str, job_description: str, job_url: str) -> dict:
+    """Looks up a publicly available hiring contact for a company, for a job you've already marked as a match. Tries publicly published info first, then an email-finder API if one is configured.
+
+    Args:
+        company: The company name or board slug.
+        job_description: The full job posting text (may contain a named contact or application email).
+        job_url: The posting URL, for reference/logging only.
+
+    Returns:
+        A dict with 'email' (str or None), 'source' (str describing where it came from), and 'confidence' ('high'/'low'/'none').
+    """
+    email_match = re.search(r"[\w.+-]+@[\w-]+\.[\w.-]+", job_description or "")
+    if email_match:
+        return {"email": email_match.group(0), "source": "job_posting_text", "confidence": "high"}
+
+    if config.HUNTER_API_KEY:
+        try:
+            resp = httpx.get(
+                "https://api.hunter.io/v2/domain-search",
+                params={"company": company, "api_key": config.HUNTER_API_KEY, "limit": 1},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            emails = resp.json().get("data", {}).get("emails", [])
+            if emails:
+                return {"email": emails[0]["value"], "source": "hunter.io", "confidence": "high"}
+        except httpx.HTTPError:
+            pass  # fall through to the low-confidence guess below
+
+    guess = f"careers@{company.lower().replace(' ', '')}.com"
+    return {"email": guess, "source": "pattern_guess", "confidence": "low"}
+
+
+def save_tailored_materials(
+    job_id: str,
+    tailored_resume_summary: str,
+    cover_letter: str,
+    contact_email: str | None = None,
+    contact_source: str | None = None,
+) -> str:
+    """Saves the resume tailoring and cover letter you drafted for a matched job, ready for the candidate's one-click review and send. Call this once per job where record_job_evaluation reported match=True.
+
+    Args:
+        job_id: The job_id this draft is for.
+        tailored_resume_summary: 3-5 bullet points rewriting the candidate's most relevant real experience for this specific job, in the candidate's own resume language -- not a full resume rewrite, and never fabricated experience.
+        cover_letter: A short (150-250 word) cover letter draft tailored to this posting.
+        contact_email: The hiring contact email, if find_hiring_contact returned one.
+        contact_source: Where that contact came from (job_posting_text / hunter.io / pattern_guess).
+
+    Returns:
+        A confirmation string.
+    """
+    materials = TailoredMaterials(
+        job_id=job_id,
+        tailored_resume_summary=tailored_resume_summary,
+        cover_letter=cover_letter,
+        contact_email=contact_email,
+        contact_source=contact_source,
+    )
+    firestore_store.save_materials(materials)
+    return f"Saved tailored materials for {job_id}"
+
+
+def send_digest() -> str:
+    """Sends the candidate a single digest email summarizing this run: every matched job with its tailored materials ready for one-click review, and every skipped job with the specific unmet requirement. Call this exactly once, after every job from fetch_new_jobs has been evaluated.
+
+    Returns:
+        A confirmation string.
+    """
+    from . import notify  # local import so notify's email deps aren't required unless this runs
+
+    apps = firestore_store.get_run_applications(current_run_id.get())
+    matched = [a for a in apps if a.get("status") in ("matched", "drafted")]
+    skipped = [a for a in apps if a.get("status") == "skipped"]
+    notify.send_digest_email(matched=matched, skipped=skipped, run_id=current_run_id.get())
+    return f"Digest sent for run {current_run_id.get()}: {len(matched)} matched, {len(skipped)} skipped"
