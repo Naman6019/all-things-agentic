@@ -5,7 +5,7 @@ Local dev:
     uvicorn main:app --reload
     curl -X POST localhost:8080/run
 
-Interactive demo instead (watch the agent call tools live in a browser):
+Interactive demo instead (drive the per-job evaluator by hand in a browser):
     adk web .
 
 Production note: this endpoint has no auth on it yet. Before deploying for
@@ -21,17 +21,11 @@ from urllib.parse import quote
 
 from fastapi import FastAPI, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
-from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
-from google.genai import types
 from pydantic import BaseModel
 
-from career_agent import config, quickadd, webui
-from career_agent.agent import root_agent
+from career_agent import pipeline, quickadd, webui
 from career_agent.storage import firestore_store
 from career_agent.tools import job_tools
-
-APP_NAME = "career-agent"
 
 app = FastAPI()
 
@@ -104,59 +98,15 @@ async def quick_add_form(
 
 
 @app.post("/run")
-async def run_pipeline():
+async def run_pipeline_endpoint():
     """Runs one full pass of the Job Search Pipeline.
 
-    This is a single, self-contained agent invocation -- no multi-turn
-    conversation state needed, since each scheduled run starts fresh and
-    Firestore (not agent session state) is what makes the pipeline
-    idempotent across runs. InMemorySessionService is enough here; a
-    Firestore-backed SessionService would only matter if this became a
-    multi-turn conversational agent that had to resume a session across
-    separate requests.
+    The control flow lives in career_agent/pipeline.py as ordinary Python; the
+    model is called once per job to judge it and once more per match to draft
+    materials. Firestore, not session state, is what makes runs idempotent, so
+    nothing here needs to persist between requests.
     """
-    run_id = uuid.uuid4().hex[:8]
-    job_tools.current_run_id.set(run_id)
-
-    session_service = InMemorySessionService()
-    user_id = "career-agent-scheduler"
-    session_id = f"run-{run_id}"
-    await session_service.create_session(app_name=APP_NAME, user_id=user_id, session_id=session_id)
-
-    runner = Runner(agent=root_agent, app_name=APP_NAME, session_service=session_service)
-    message = types.Content(role="user", parts=[types.Part(text="Run the job search pipeline.")])
-
-    event_count = 0
-    tokens = {"input": 0, "output": 0, "thoughts": 0, "total": 0}
-    async for event in runner.run_async(user_id=user_id, session_id=session_id, new_message=message):
-        event_count += 1
-        # Token usage is only visible on the events; there is no per-run total
-        # from the SDK. Accumulating here is what makes cost per run knowable
-        # without going to Cloud Billing, which lags ~24h.
-        usage = getattr(event, "usage_metadata", None)
-        if usage:
-            tokens["input"] += usage.prompt_token_count or 0
-            tokens["output"] += usage.candidates_token_count or 0
-            tokens["thoughts"] += getattr(usage, "thoughts_token_count", 0) or 0
-            tokens["total"] += usage.total_token_count or 0
-
-    # Thinking tokens bill at the output rate.
-    billed_output = tokens["output"] + tokens["thoughts"]
-    cost_usd = (
-        tokens["input"] / 1_000_000 * config.PRICE_INPUT_PER_1M_USD
-        + billed_output / 1_000_000 * config.PRICE_OUTPUT_PER_1M_USD
-    )
-    firestore_store.save_run_summary(
-        run_id,
-        {"tokens": tokens, "cost_usd": round(cost_usd, 4), "model": config.GEMINI_MODEL},
-    )
-
-    return {
-        "run_id": run_id,
-        "event_count": event_count,
-        "tokens": tokens,
-        "estimated_cost_usd": round(cost_usd, 4),
-    }
+    return await pipeline.run_once(uuid.uuid4().hex[:8])
 
 
 if __name__ == "__main__":
