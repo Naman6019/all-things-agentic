@@ -53,6 +53,12 @@ class JobEvaluation:
     match: bool
     unmet_requirements: list[str]
     reasoning: str
+    # Requirements the posting simply never states (salary, sponsorship, years).
+    # Kept separate from unmet_requirements on purpose: "the posting doesn't say"
+    # is not the same claim as "the posting rules you out", and collapsing the
+    # two makes almost every job a non-match, since most postings are silent on
+    # salary and sponsorship.
+    missing_information: list[str] = field(default_factory=list)
     evaluated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 

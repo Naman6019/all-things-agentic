@@ -6,6 +6,7 @@ from __future__ import annotations
 import httpx
 
 from ..models import JobListing
+from .text_utils import clean_description
 
 ARBEITNOW_URL = "https://www.arbeitnow.com/api/job-board-api"
 
@@ -25,7 +26,7 @@ async def fetch_arbeitnow(client: httpx.AsyncClient) -> list[JobListing]:
                 location=j.get("location", ""),
                 remote=bool(j.get("remote")),
                 url=j.get("url", ""),
-                description=j.get("description", ""),
+                description=clean_description(j.get("description", "")),
                 posted_at=str(j.get("created_at", "")),
             )
         )

@@ -94,6 +94,7 @@ def save_evaluation(run_id: str, evaluation: JobEvaluation) -> None:
             "run_id": run_id,
             "match": evaluation.match,
             "unmet_requirements": evaluation.unmet_requirements,
+            "missing_information": evaluation.missing_information,
             "reasoning": evaluation.reasoning,
             "evaluated_at": evaluation.evaluated_at,
             "status": "matched" if evaluation.match else "skipped",
@@ -115,6 +116,25 @@ def save_materials(materials: TailoredMaterials) -> None:
         },
         merge=True,
     )
+
+
+def save_run_summary(run_id: str, summary: dict) -> None:
+    """Records what a run fetched, filtered, and took on.
+
+    The pre-filter drops jobs without a per-job model-written reason, so these
+    aggregate counts are the only record that they existed. Without them a
+    digest reporting "3 evaluated" looks like the sources only had 3 jobs.
+    """
+    db = get_client()
+    db.collection("runs").document(run_id).set(
+        dict(summary, run_id=run_id, recorded_at=datetime.now(timezone.utc).isoformat()),
+        merge=True,
+    )
+
+
+def get_run_summary(run_id: str) -> dict:
+    db = get_client()
+    return (db.collection("runs").document(run_id).get().to_dict()) or {}
 
 
 def get_run_applications(run_id: str) -> list[dict]:

@@ -19,7 +19,7 @@ from dataclasses import asdict
 
 import httpx
 
-from .. import config
+from .. import config, matching
 from ..models import JobEvaluation, TailoredMaterials
 from ..sources import aggregators, ats_boards
 from ..storage import firestore_store
@@ -56,18 +56,38 @@ async def fetch_new_jobs(sources: list[str] | None = None) -> list[dict]:
 
     Returns:
         A list of job dicts, each with job_id, title, company, location,
-        remote, url, and description. Evaluate every job returned here.
+        remote, url, and description. These have already been screened for
+        title relevance, so evaluate every job returned here.
     """
     jobs = await _fetch_all_sources(sources)
     unseen = firestore_store.find_unseen(jobs)
 
-    # Cap before marking seen -- anything past the cap must stay unseen so a
-    # later run still picks it up. See config.MAX_JOBS_PER_RUN for why the cap
-    # exists at all.
-    batch = unseen[: config.MAX_JOBS_PER_RUN]
+    profile = config.load_candidate_profile()
+    relevant, filtered_out = matching.prefilter(unseen, profile)
+
+    # Cap after the pre-filter, so the run's budget is spent on plausible jobs
+    # rather than on whatever the feed happened to list first. Cap before
+    # marking seen, so anything past it stays unseen for a later run.
+    batch = relevant[: config.MAX_JOBS_PER_RUN]
     firestore_store.mark_seen(batch)
     for job in batch:
         firestore_store.save_job_listing(job)
+
+    # Pre-filtered jobs are deliberately NOT marked seen. They cost nothing to
+    # re-screen (no model call), and leaving them unseen means widening
+    # target_titles later surfaces jobs that were skipped under the old list
+    # rather than burying them forever.
+    firestore_store.save_run_summary(
+        current_run_id.get(),
+        {
+            "fetched": len(jobs),
+            "unseen": len(unseen),
+            "relevant_after_prefilter": len(relevant),
+            "taken_this_run": len(batch),
+            "deferred_to_next_run": max(0, len(relevant) - len(batch)),
+            "filtered_out": filtered_out,
+        },
+    )
     return [asdict(j) for j in batch]
 
 
@@ -81,20 +101,28 @@ def record_job_evaluation(
     job_id: str,
     match: bool,
     unmet_requirements: list[str],
+    missing_information: list[str],
     reasoning: str,
 ) -> str:
     """Records your match verdict for a job against the candidate's profile. Call this exactly once per job returned by fetch_new_jobs, whether or not it matches.
 
     Args:
         job_id: The job_id from fetch_new_jobs.
-        match: True only if the job meets every hard requirement in the candidate profile.
-        unmet_requirements: If match is False, a specific, human-readable list of which requirements were not met (e.g. "Requires 8+ yrs experience, profile has 5"). Empty list if match is True.
+        match: True if the posting does not rule the candidate out on any requirement it actually states. A requirement the posting is silent about does NOT make this False.
+        unmet_requirements: Requirements the posting states and the candidate demonstrably fails, in specific human-readable terms (e.g. "Requires 8+ yrs experience, profile has 1"). Empty list if match is True.
+        missing_information: Requirements the posting never states, so you could not check them (e.g. "Posting does not state a salary range", "Posting does not say whether visa sponsorship is available"). These are things for the candidate to verify, not reasons to reject.
         reasoning: A one to two sentence explanation of the verdict.
 
     Returns:
         A confirmation string.
     """
-    evaluation = JobEvaluation(job_id=job_id, match=match, unmet_requirements=unmet_requirements, reasoning=reasoning)
+    evaluation = JobEvaluation(
+        job_id=job_id,
+        match=match,
+        unmet_requirements=unmet_requirements,
+        missing_information=missing_information,
+        reasoning=reasoning,
+    )
     firestore_store.save_evaluation(current_run_id.get(), evaluation)
     return f"Recorded evaluation for {job_id}: match={match}"
 
@@ -173,5 +201,8 @@ def send_digest() -> str:
     apps = firestore_store.get_run_applications(current_run_id.get())
     matched = [a for a in apps if a.get("status") in ("matched", "drafted")]
     skipped = [a for a in apps if a.get("status") == "skipped"]
-    notify.send_digest_email(matched=matched, skipped=skipped, run_id=current_run_id.get())
+    summary = firestore_store.get_run_summary(current_run_id.get())
+    notify.send_digest_email(
+        matched=matched, skipped=skipped, run_id=current_run_id.get(), summary=summary
+    )
     return f"Digest sent for run {current_run_id.get()}: {len(matched)} matched, {len(skipped)} skipped"

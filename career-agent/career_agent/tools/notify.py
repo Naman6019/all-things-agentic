@@ -14,24 +14,44 @@ from email.mime.text import MIMEText
 from .. import config
 
 
-def _render_digest(matched: list[dict], skipped: list[dict], run_id: str) -> str:
+def _render_digest(matched: list[dict], skipped: list[dict], run_id: str, summary: dict | None = None) -> str:
     lines = [f"Career Agent digest -- run {run_id}", ""]
     lines.append(f"MATCHED ({len(matched)})")
     for a in matched:
         lines.append(f"- {a.get('title')} @ {a.get('company')} -- {a.get('url')}")
         if a.get("contact_email"):
             lines.append(f"    contact: {a['contact_email']} ({a.get('contact_source')})")
+        for unknown in a.get("missing_information") or []:
+            lines.append(f"    verify: {unknown}")
         lines.append(f"    draft resume + cover letter saved -- see applications/{a.get('job_id')} in Firestore")
     lines.append("")
     lines.append(f"SKIPPED ({len(skipped)})")
     for a in skipped:
         reasons = ", ".join(a.get("unmet_requirements", [])) or a.get("reasoning", "no reason recorded")
         lines.append(f"- {a.get('title')} @ {a.get('company')}: {reasons}")
+        for unknown in a.get("missing_information") or []:
+            lines.append(f"    (not stated in posting: {unknown})")
+
+    if summary:
+        lines.append("")
+        lines.append("THIS RUN")
+        lines.append(
+            f"- {summary.get('fetched', 0)} postings fetched, "
+            f"{summary.get('unseen', 0)} not seen before, "
+            f"{summary.get('relevant_after_prefilter', 0)} matched a target title"
+        )
+        # Pre-filtered jobs never get an individual model-written reason, so
+        # these counts are the only place they are accounted for.
+        for reason, count in (summary.get("filtered_out") or {}).items():
+            lines.append(f"- set aside without evaluation: {count} ({reason.replace('_', ' ')})")
+        deferred = summary.get("deferred_to_next_run", 0)
+        if deferred:
+            lines.append(f"- {deferred} relevant postings deferred to the next run by the per-run cap")
     return "\n".join(lines)
 
 
-def send_digest_email(matched: list[dict], skipped: list[dict], run_id: str) -> None:
-    body = _render_digest(matched, skipped, run_id)
+def send_digest_email(matched: list[dict], skipped: list[dict], run_id: str, summary: dict | None = None) -> None:
+    body = _render_digest(matched, skipped, run_id, summary)
     if not config.DIGEST_TO_EMAIL:
         print("DIGEST_TO_EMAIL not configured -- printing digest instead:\n", body)
         return

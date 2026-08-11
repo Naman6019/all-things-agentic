@@ -10,6 +10,7 @@ from __future__ import annotations
 import httpx
 
 from ..models import JobListing
+from .text_utils import clean_description
 
 GREENHOUSE_URL = "https://boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true"
 LEVER_URL = "https://api.lever.co/v0/postings/{slug}?mode=json"
@@ -31,7 +32,8 @@ async def fetch_greenhouse(slug: str, client: httpx.AsyncClient) -> list[JobList
                 location=location,
                 remote="remote" in location.lower(),
                 url=j.get("absolute_url", ""),
-                description=j.get("content", ""),
+                # Greenhouse returns HTML-escaped HTML here.
+                description=clean_description(j.get("content", "")),
                 posted_at=j.get("updated_at"),
             )
         )
@@ -55,7 +57,8 @@ async def fetch_lever(slug: str, client: httpx.AsyncClient) -> list[JobListing]:
                 location=location,
                 remote="remote" in location.lower(),
                 url=j.get("hostedUrl", ""),
-                description=j.get("descriptionPlain") or j.get("description", ""),
+                # descriptionPlain is already plain; the `description` fallback is HTML.
+                description=clean_description(j.get("descriptionPlain") or j.get("description", "")),
                 posted_at=None,
             )
         )
