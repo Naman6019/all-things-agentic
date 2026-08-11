@@ -62,6 +62,17 @@ uvicorn main:app --reload
 curl -X POST http://localhost:8080/run
 ```
 
+**Review UI** -- open <http://localhost:8080/> after a run. Server-rendered
+from Firestore, no build step and no external assets, so it deploys with the
+service and renders offline. Shows each matched job with its JD link, why it
+matched, anything the posting never stated that you should verify, and the
+drafted resume bullets and cover letter. `?status=skipped` shows the
+rejections with their specific unmet requirements, and `/api/jobs` returns
+the same data as JSON.
+
+It is read-only on purpose: it links out to the posting rather than
+submitting anything, per the guardrail this project is built around.
+
 ## Deploy to Cloud Run
 
 ```bash

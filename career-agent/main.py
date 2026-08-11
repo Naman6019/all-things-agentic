@@ -19,11 +19,14 @@ from __future__ import annotations
 import uuid
 
 from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
+from career_agent import webui
 from career_agent.agent import root_agent
+from career_agent.storage import firestore_store
 from career_agent.tools import job_tools
 
 APP_NAME = "career-agent"
@@ -34,6 +37,24 @@ app = FastAPI()
 @app.get("/healthz")
 def healthz():
     return {"status": "ok"}
+
+
+@app.get("/", response_class=HTMLResponse)
+def review_ui(status: str = "matched"):
+    """Read-only review page: matched jobs, their JD links, and why they matched.
+
+    Read-only on purpose. The guardrail this project is built around is that a
+    human performs the actual apply/send, so this page links out to the posting
+    rather than submitting anything.
+    """
+    return webui.render(status)
+
+
+@app.get("/api/jobs")
+def api_jobs(status: str = "matched"):
+    """The same data as JSON, for anything that wants to consume it directly."""
+    statuses = ["matched", "drafted"] if status == "matched" else [status]
+    return {"status": status, "jobs": firestore_store.get_applications_by_status(statuses)}
 
 
 @app.post("/run")

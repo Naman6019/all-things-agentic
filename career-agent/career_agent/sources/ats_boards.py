@@ -138,12 +138,17 @@ async def _hydrate_smartrecruiters(job: JobListing, client: httpx.AsyncClient) -
     _, slug, posting_id = job.job_id.split(":", 2)
     resp = await client.get(SMARTRECRUITERS_POSTING_URL.format(slug=slug, posting_id=posting_id), timeout=20)
     resp.raise_for_status()
-    ad = (resp.json().get("jobAd") or {}).get("sections") or {}
+    payload = resp.json()
+    ad = (payload.get("jobAd") or {}).get("sections") or {}
     parts = [
         (ad.get(section) or {}).get("text", "")
         for section in ("companyDescription", "jobDescription", "qualifications", "additionalInformation")
     ]
     job.description = clean_description("\n\n".join(p for p in parts if p))
+    # Prefer the employer's own posting page over the URL we assembled from the
+    # slug and id: postingUrl points at the company's branded portal where one
+    # exists, which is the link a human actually wants to open and apply from.
+    job.url = payload.get("postingUrl") or payload.get("applyUrl") or job.url
 
 
 async def hydrate_descriptions(jobs: list[JobListing], client: httpx.AsyncClient) -> None:

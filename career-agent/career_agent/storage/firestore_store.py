@@ -131,6 +131,27 @@ def get_run_summary(run_id: str) -> dict:
     return (db.collection("runs").document(run_id).get().to_dict()) or {}
 
 
+def get_applications_by_status(statuses: list[str]) -> list[dict]:
+    """Applications in any of the given statuses, newest verdict first.
+
+    Sorted in Python rather than with order_by: combining a where() with an
+    order_by on a different field needs a composite index in Firestore, and
+    this collection is small enough that the sort is free.
+    """
+    db = get_client()
+    docs = db.collection("applications").where(filter=FieldFilter("status", "in", statuses)).stream()
+    apps = [dict(d.to_dict() or {}, job_id=d.id) for d in docs]
+    apps.sort(key=lambda a: a.get("materials_created_at") or a.get("evaluated_at") or "", reverse=True)
+    return apps
+
+
+def get_latest_run_summary() -> dict:
+    db = get_client()
+    runs = [d.to_dict() or {} for d in db.collection("runs").stream()]
+    runs.sort(key=lambda r: r.get("recorded_at", ""), reverse=True)
+    return runs[0] if runs else {}
+
+
 def get_run_applications(run_id: str) -> list[dict]:
     db = get_client()
     docs = db.collection("applications").where(filter=FieldFilter("run_id", "==", run_id)).stream()
