@@ -27,23 +27,51 @@ from ..storage import firestore_store
 current_run_id: contextvars.ContextVar[str] = contextvars.ContextVar("current_run_id", default="local")
 
 
-async def _fetch_all_sources(sources: list[str] | None) -> list[dict]:
-    async with httpx.AsyncClient() as client:
-        tasks = []
-        board_slugs = sources or config.GREENHOUSE_BOARD_SLUGS
-        for slug in board_slugs:
-            tasks.append(ats_boards.fetch_greenhouse(slug, client))
+# RemoteOK and some ATS edges reject the default client user-agent.
+_HTTP_HEADERS = {"User-Agent": "career-agent/0.1 (+https://github.com/)"}
+
+
+def _client() -> httpx.AsyncClient:
+    return httpx.AsyncClient(headers=_HTTP_HEADERS, follow_redirects=True)
+
+
+async def _fetch_all_sources(sources: list[str] | None) -> tuple[list, dict[str, str]]:
+    """Fetches every configured source concurrently.
+
+    Returns the combined listings plus a per-source error map. A flaky source
+    must not sink the run, but it must not vanish either -- a silently empty
+    board looks identical to a board with no matching jobs, which is how you
+    end up debugging the wrong thing.
+    """
+    labelled = []
+    async with _client() as client:
+        for slug in (sources or config.GREENHOUSE_BOARD_SLUGS):
+            labelled.append((f"greenhouse:{slug}", ats_boards.fetch_greenhouse(slug, client)))
         for slug in config.LEVER_BOARD_SLUGS:
-            tasks.append(ats_boards.fetch_lever(slug, client))
+            labelled.append((f"lever:{slug}", ats_boards.fetch_lever(slug, client)))
+        for slug in config.ASHBY_BOARD_SLUGS:
+            labelled.append((f"ashby:{slug}", ats_boards.fetch_ashby(slug, client)))
+        for slug in config.SMARTRECRUITERS_COMPANY_SLUGS:
+            labelled.append((f"smartrecruiters:{slug}", ats_boards.fetch_smartrecruiters(slug, client)))
         if config.ENABLE_ARBEITNOW:
-            tasks.append(aggregators.fetch_arbeitnow(client))
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+            labelled.append(("arbeitnow", aggregators.fetch_arbeitnow(client)))
+        if config.ENABLE_REMOTIVE:
+            labelled.append(("remotive", aggregators.fetch_remotive(client)))
+        if config.ENABLE_REMOTEOK:
+            labelled.append(("remoteok", aggregators.fetch_remoteok(client)))
+        if config.ENABLE_JOBICY:
+            labelled.append(("jobicy", aggregators.fetch_jobicy(client)))
+
+        results = await asyncio.gather(*(task for _, task in labelled), return_exceptions=True)
+
     jobs = []
-    for r in results:
-        if isinstance(r, BaseException):
-            continue  # one flaky source shouldn't fail the whole run
-        jobs.extend(r)
-    return jobs
+    errors: dict[str, str] = {}
+    for (name, _), result in zip(labelled, results):
+        if isinstance(result, BaseException):
+            errors[name] = f"{type(result).__name__}: {str(result)[:120]}"
+            continue
+        jobs.extend(result)
+    return jobs, errors
 
 
 async def fetch_new_jobs(sources: list[str] | None = None) -> list[dict]:
@@ -59,7 +87,7 @@ async def fetch_new_jobs(sources: list[str] | None = None) -> list[dict]:
         remote, url, and description. These have already been screened for
         title relevance, so evaluate every job returned here.
     """
-    jobs = await _fetch_all_sources(sources)
+    jobs, source_errors = await _fetch_all_sources(sources)
     unseen = firestore_store.find_unseen(jobs)
 
     profile = config.load_candidate_profile()
@@ -69,7 +97,14 @@ async def fetch_new_jobs(sources: list[str] | None = None) -> list[dict]:
     # rather than on whatever the feed happened to list first. Cap before
     # marking seen, so anything past it stays unseen for a later run.
     batch = relevant[: config.MAX_JOBS_PER_RUN]
-    firestore_store.mark_seen(batch)
+
+    # Only now are descriptions worth paying for -- see fetch_smartrecruiters.
+    async with _client() as client:
+        await ats_boards.hydrate_descriptions(batch, client)
+
+    # Deliberately NOT marked seen here. Dedupe is claimed by
+    # record_job_evaluation once a verdict exists, so a run that dies partway
+    # leaves its unevaluated jobs available to the next one.
     for job in batch:
         firestore_store.save_job_listing(job)
 
@@ -86,6 +121,7 @@ async def fetch_new_jobs(sources: list[str] | None = None) -> list[dict]:
             "taken_this_run": len(batch),
             "deferred_to_next_run": max(0, len(relevant) - len(batch)),
             "filtered_out": filtered_out,
+            "source_errors": source_errors,
         },
     )
     return [asdict(j) for j in batch]
@@ -124,6 +160,9 @@ def record_job_evaluation(
         reasoning=reasoning,
     )
     firestore_store.save_evaluation(current_run_id.get(), evaluation)
+    # Claim dedupe only now that a verdict is durably stored -- see
+    # firestore_store.mark_job_seen for why this is not done at fetch time.
+    firestore_store.mark_job_seen(job_id)
     return f"Recorded evaluation for {job_id}: match={match}"
 
 

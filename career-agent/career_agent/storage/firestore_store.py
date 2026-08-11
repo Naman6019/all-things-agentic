@@ -18,7 +18,6 @@ from ..models import JobEvaluation, JobListing, TailoredMaterials
 _client: firestore.Client | None = None
 
 _READ_CHUNK = 300
-_WRITE_CHUNK = 400  # Firestore caps a batch at 500 writes
 
 
 def get_client() -> firestore.Client:
@@ -31,10 +30,9 @@ def get_client() -> firestore.Client:
 def find_unseen(jobs: list[JobListing]) -> list[JobListing]:
     """Returns the jobs not already recorded in jobs_seen. Read-only.
 
-    Deliberately split from mark_seen: the caller caps how many jobs a run
-    actually takes on (config.MAX_JOBS_PER_RUN), and only the jobs that make
-    that cut may be marked seen. Marking here instead would burn every job
-    over the cap -- seen forever, never evaluated.
+    Read-only on purpose: a job is marked seen by mark_job_seen once it has an
+    evaluation, never at fetch time. Writing here would burn every job over the
+    per-run cap, and every job still in flight when a run fails.
 
     Reads in batched get_all calls rather than one round trip per job; a single
     Greenhouse board can return 500+ postings.
@@ -49,27 +47,23 @@ def find_unseen(jobs: list[JobListing]) -> list[JobListing]:
     return [job for job in jobs if job.job_id not in seen_ids]
 
 
-def mark_seen(jobs: list[JobListing]) -> None:
-    """Records jobs in jobs_seen so later runs skip them.
+def mark_job_seen(job_id: str) -> None:
+    """Records one job in jobs_seen, so later runs skip it.
 
-    Still marked at fetch time rather than after record_job_evaluation
-    succeeds, so a crash mid-run drops the in-flight jobs for good. Acceptable
-    for the hackathon MVP; the production fix is to move this call to after
-    the evaluation write.
+    Called only after that job's evaluation has been written -- never at fetch
+    time. Marking at fetch time meant any mid-run failure silently burned every
+    job still in flight: they were seen, so no later run would retry them, and
+    unevaluated, so they never reached a digest. That is not hypothetical. A run
+    hit a Vertex 429 after 14 of 25 jobs and orphaned the remaining 11.
+
+    The trade-off is that two runs overlapping in time can both pick up the
+    same job. Scheduled runs are hours apart, and a duplicate evaluation is a
+    far cheaper failure than a job silently lost forever.
     """
     db = get_client()
-    for start in range(0, len(jobs), _WRITE_CHUNK):
-        batch = db.batch()
-        for job in jobs[start : start + _WRITE_CHUNK]:
-            batch.set(
-                db.collection("jobs_seen").document(job.job_id),
-                {
-                    "seen_at": datetime.now(timezone.utc).isoformat(),
-                    "title": job.title,
-                    "company": job.company,
-                },
-            )
-        batch.commit()
+    db.collection("jobs_seen").document(job_id).set(
+        {"seen_at": datetime.now(timezone.utc).isoformat()}, merge=True
+    )
 
 
 def save_job_listing(job: JobListing) -> None:

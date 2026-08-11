@@ -47,6 +47,10 @@ def _render_digest(matched: list[dict], skipped: list[dict], run_id: str, summar
         deferred = summary.get("deferred_to_next_run", 0)
         if deferred:
             lines.append(f"- {deferred} relevant postings deferred to the next run by the per-run cap")
+        # A source that failed returned zero jobs, which is indistinguishable
+        # from a source with nothing to offer unless it is called out.
+        for source, error in (summary.get("source_errors") or {}).items():
+            lines.append(f"- SOURCE FAILED: {source} -- {error}")
     return "\n".join(lines)
 
 

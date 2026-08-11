@@ -23,12 +23,29 @@ GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
 # Free, public, per-company ATS board APIs -- no scraping, no key needed.
 # Find a company's slug from its careers page URL, e.g.
 # boards.greenhouse.io/<slug> or jobs.lever.co/<slug>.
-GREENHOUSE_BOARD_SLUGS = [s for s in os.environ.get("GREENHOUSE_BOARD_SLUGS", "").split(",") if s]
-LEVER_BOARD_SLUGS = [s for s in os.environ.get("LEVER_BOARD_SLUGS", "").split(",") if s]
+def _slugs(name: str) -> list[str]:
+    return [s.strip() for s in os.environ.get(name, "").split(",") if s.strip()]
+
+
+GREENHOUSE_BOARD_SLUGS = _slugs("GREENHOUSE_BOARD_SLUGS")
+LEVER_BOARD_SLUGS = _slugs("LEVER_BOARD_SLUGS")
+# Ashby hosts most of the AI labs (openai, cohere, ...). Slug comes from
+# jobs.ashbyhq.com/<slug>.
+ASHBY_BOARD_SLUGS = _slugs("ASHBY_BOARD_SLUGS")
+# SmartRecruiters covers a lot of mid/large non-tech-native employers. Slug
+# comes from jobs.smartrecruiters.com/<slug>.
+SMARTRECRUITERS_COMPANY_SLUGS = _slugs("SMARTRECRUITERS_COMPANY_SLUGS")
 
 # --- Popular job sites, covered via aggregator feeds (not scraping) ----------
 # See hackathon-project-plan.md for why LinkedIn/Indeed aren't scraped directly.
-ENABLE_ARBEITNOW = os.environ.get("ENABLE_ARBEITNOW", "true").lower() == "true"
+def _enabled(name: str, default: str = "true") -> bool:
+    return os.environ.get(name, default).lower() == "true"
+
+
+ENABLE_ARBEITNOW = _enabled("ENABLE_ARBEITNOW")
+ENABLE_REMOTIVE = _enabled("ENABLE_REMOTIVE")
+ENABLE_REMOTEOK = _enabled("ENABLE_REMOTEOK")
+ENABLE_JOBICY = _enabled("ENABLE_JOBICY")
 
 # --- Per-run volume cap ---------------------------------------------------------
 # Hard ceiling on how many unseen jobs get handed to the model in one run. This

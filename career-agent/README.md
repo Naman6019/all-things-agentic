@@ -80,11 +80,17 @@ own auth check on top of that yet, so don't skip it.
 
 ## What's simplified for the hackathon MVP (and the honest list of caveats)
 
-- **Only Greenhouse + Lever + Arbeitnow are implemented.** Ashby and
-  SmartRecruiters follow the identical free/public/no-key pattern -- see the
-  `TODO` in `career_agent/sources/ats_boards.py`. Remotive/RemoteOK are the
-  same in `aggregators.py`. Adding one is a ~15-line function, not a new
-  architecture.
+- **Sources implemented:** Greenhouse, Lever, Ashby and SmartRecruiters for
+  company boards; Arbeitnow, Remotive, RemoteOK and Jobicy as aggregator
+  feeds. All are free, public and keyless. Two notes:
+  - SmartRecruiters slugs are **case-sensitive** (`BoschGroup` returns 4766
+    postings, `bosch` returns 0), and its list endpoint carries no
+    description, so each one costs a second request. Those are fetched lazily
+    for only the jobs that survive the pre-filter and the per-run cap.
+  - The SmartRecruiters list is one page of 100; pagination isn't implemented.
+- **Vertex quota is the current ceiling on `MAX_JOBS_PER_RUN`.** A run of 25
+  jobs hit `429 RESOURCE_EXHAUSTED` partway through on a new GCP project.
+  The cap is set to 10; raise it after requesting a Vertex AI quota increase.
 - **Contact-finding is a regex + optional Hunter.io fallback**, not a real
   enrichment service. It's intentionally conservative: it only returns
   "high confidence" when it found an actual email in the posting text or
@@ -107,11 +113,14 @@ own auth check on top of that yet, so don't skip it.
   nowhere near your target titles. A first smoke run against the `discord`
   board did exactly that: 5 jobs evaluated, 5 skipped, all non-engineering.
   Filtering on title/location before the cap is the next fix.
-- **`jobs_seen` is marked at fetch time, not after evaluation completes.**
-  If the pipeline crashes mid-run, a job that was fetched but not yet
-  evaluated will not be retried on the next run. Acceptable for a hackathon
-  demo; a production version would move the dedupe write to after
-  `record_job_evaluation` succeeds.
+- **`jobs_seen` is claimed after evaluation, not at fetch time.** A job is
+  marked seen only once `record_job_evaluation` has stored a verdict, so a
+  run that dies partway leaves its in-flight jobs available to the next run.
+  This was originally the other way round and cost real jobs: a run hit a
+  Vertex 429 after 14 of 25 and orphaned the remaining 11 -- marked seen, so
+  never retried, and unevaluated, so never surfaced. The trade-off is that
+  two runs overlapping in time may both evaluate the same job, which is far
+  cheaper than losing one silently.
 - **Sending the actual application/apply-click stays manual, on purpose** --
   see the guardrails section in `../hackathon-project-plan.md`. This agent
   drafts and finds; you send.

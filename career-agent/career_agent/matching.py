@@ -31,32 +31,65 @@ REASON_TITLE = "title_not_in_target_titles"
 REASON_NOT_REMOTE = "remote_only_but_posting_is_onsite"
 
 
-def _tokens(text: str) -> set[str]:
-    """Lowercase word tokens, dropping single characters.
+# How many unrelated words may sit inside a matched title phrase. 1 admits
+# "Machine Learning [Infrastructure] Engineer" while still rejecting "Data
+# [Center Electrical] Engineer", which needs 2.
+MAX_PHRASE_GAP = 1
 
-    Single characters are dropped so a target title like "Machine Learning
-    Engineer I" doesn't hinge on matching a bare "i".
+
+def _tokens(text: str) -> list[str]:
+    """Lowercase word tokens in order, dropping single characters.
+
+    Single characters go so a target like "Machine Learning Engineer I" doesn't
+    hinge on a bare "i", and so punctuation variants ("AI/ML Engineer" vs
+    "AI ML Engineer") normalize identically.
     """
-    return {t for t in _TOKEN_RE.findall((text or "").lower()) if len(t) > 1}
+    return [t for t in _TOKEN_RE.findall((text or "").lower()) if len(t) > 1]
+
+
+def _appears_in_order(target: list[str], job: list[str], max_gap: int = MAX_PHRASE_GAP) -> bool:
+    """True if target's words appear in job in order, tightly enough to be the same role.
+
+    Tries every possible starting position rather than taking the first match,
+    since a greedy scan can pick an early occurrence that spreads the span too
+    wide and miss a tighter one later in the title.
+    """
+    if not target:
+        return False
+    for start in (i for i, tok in enumerate(job) if tok == target[0]):
+        pos, matched = start, 1
+        for want in target[1:]:
+            try:
+                pos = job.index(want, pos + 1)
+            except ValueError:
+                matched = -1
+                break
+            matched += 1
+        if matched == len(target) and (pos - start + 1) - len(target) <= max_gap:
+            return True
+    return False
 
 
 def title_matches(job_title: str, target_titles: list[str]) -> bool:
-    """True if every significant word of some target title appears in job_title.
+    """True if some target title appears in job_title as a tight, in-order phrase.
 
-    Whole-token subset matching, not substring matching. Substring matching
-    looks simpler but quietly says "Software Engineer" matches "Software
-    Engineering Manager" -- the exact false positive that wasted a smoke run.
-    Requiring "engineer" as its own token rejects "engineering manager" while
-    still accepting "Senior Machine Learning Engineer" and "Software Engineer,
-    Machine Learning".
+    Three approaches were tried against real board data; the first two produced
+    false positives that wasted whole runs:
+
+    - Substring matching says "Software Engineer" matches "Software
+      ENGINEERING Manager". Tokenizing fixes that: different tokens.
+    - Token-SUBSET matching (all target words present anywhere) says "Data
+      Engineer" matches "Data Center Electrical Engineer" -- the words are all
+      there, just not together.
+    - Strict contiguity fixes that but loses "Machine Learning Infrastructure
+      Engineer", a genuine match, because a qualifier sits mid-phrase.
+
+    So: in order, with at most MAX_PHRASE_GAP intervening words.
     """
-    job_tokens = _tokens(job_title)
-    if not job_tokens:
+    job = _tokens(job_title)
+    if not job:
         return False
-    return any(
-        target_tokens and target_tokens <= job_tokens
-        for target_tokens in (_tokens(t) for t in target_titles)
-    )
+    return any(_appears_in_order(_tokens(t), job) for t in target_titles)
 
 
 def prefilter(jobs: list[JobListing], profile: CandidateProfile) -> tuple[list[JobListing], dict[str, int]]:
