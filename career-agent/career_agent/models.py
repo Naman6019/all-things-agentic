@@ -32,6 +32,13 @@ class CandidateProfile:
     remote_only: bool
     allowed_locations: list[str]
     min_salary: Optional[int]
+    # Currency of min_salary, as an ISO code. Without this, a floor of 800000
+    # (INR) reads as 800000 of whatever the posting quotes -- most job boards
+    # quote USD, so the comparison silently comes out ~85x wrong in one
+    # direction or the other. The evaluating model is told to convert before
+    # comparing, and to treat the requirement as unknown rather than unmet when
+    # a posting states no salary at all.
+    min_salary_currency: str
     needs_visa_sponsorship: bool
     resume_master_text: str
     writing_voice_samples: list[str] = field(default_factory=list)

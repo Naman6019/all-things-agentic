@@ -5,6 +5,7 @@
   "remote_only": false,
   "allowed_locations": ["Remote", "New York, NY"],
   "min_salary": 120000,
+  "min_salary_currency": "USD",
   "needs_visa_sponsorship": false,
   "resume_master_text": "Paste your full resume text here -- the agent reads this to write tailored bullets and cover letters. The more detail (projects, metrics, tech stack), the better the drafts.",
   "writing_voice_samples": [
