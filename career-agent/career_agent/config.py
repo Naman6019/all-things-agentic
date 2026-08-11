@@ -62,14 +62,16 @@ MAX_JOBS_PER_RUN = int(os.environ.get("MAX_JOBS_PER_RUN", "5"))
 # experience -- but only after a full evaluation has been paid for. One run
 # spent nine of its ten slots doing exactly that.
 #
-# Deliberately conservative: "senior" is NOT excluded by default, because
-# senior roles vary from 3 years upward and some are worth a look. Add it here
-# if the digest fills with them.
+# "senior" is included: senior postings start around 3-5 years, which is out of
+# reach at ~1 year of experience, and they dominated the relevant pool. The
+# cost of including it is real -- a "Senior Engineer" asking for 3 years is a
+# stretch worth seeing, and this drops it unseen. Remove it from the list to
+# get those back.
 EXCLUDE_TITLE_KEYWORDS = [
     s.strip()
     for s in os.environ.get(
         "EXCLUDE_TITLE_KEYWORDS",
-        "staff,principal,director,distinguished,fellow,vp,vice president,head of,chief",
+        "staff,principal,director,distinguished,fellow,vp,vice president,head of,chief,senior",
     ).split(",")
     if s.strip()
 ]

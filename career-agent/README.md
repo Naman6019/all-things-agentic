@@ -140,9 +140,11 @@ own auth check on top of that yet, so don't skip it.
   Jobs are screened before the cap on two deterministic checks, so the budget
   goes to plausible roles: the title must match one of `target_titles`, and it
   must not contain a phrase from `EXCLUDE_TITLE_KEYWORDS` (staff, principal,
-  director...). On a 2564-posting sweep that leaves 328 from 2564 -- 2053
-  dropped on title, 183 on seniority. Both counts are reported in the digest
+  director, senior...). On a 2575-posting sweep that leaves 271 -- 2059
+  dropped on title, 245 on seniority. Both counts are reported in the digest
   and the UI, since a pre-filtered job never gets an individual reason.
+  Note that `senior` is in the default list, which drops "Senior Engineer"
+  roles asking only 3 years; remove it if you want those back.
 - **`jobs_seen` is claimed after evaluation, not at fetch time.** A job is
   marked seen only once `record_job_evaluation` has stored a verdict, so a
   run that dies partway leaves its in-flight jobs available to the next run.
