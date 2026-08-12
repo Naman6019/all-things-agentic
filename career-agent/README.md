@@ -91,21 +91,105 @@ and the URL is kept as the link to apply from. Automated retrieval on those
 sites is what gets accounts banned, which is the whole reason they aren't
 sources.
 
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest        # 71 tests, ~2s
+```
+
+Every test is offline -- no Firestore, no model calls, no network -- so the
+suite runs on a fresh clone with no GCP project. Most cases came from real
+board data that broke something; the matcher was rewritten twice and those
+regressions are pinned.
+
 ## Deploy to Cloud Run
+
+Currently deployed and running on a 12-hourly schedule.
+
+### One-time setup
+
+Two service accounts, each with only what it needs:
+
+```bash
+PROJECT=your-project
+gcloud iam service-accounts create career-agent-run
+gcloud iam service-accounts create career-agent-scheduler
+
+# Runtime: Firestore + Vertex only
+for ROLE in roles/datastore.user roles/aiplatform.user; do
+  gcloud projects add-iam-policy-binding "$PROJECT" \
+    --member="serviceAccount:career-agent-run@$PROJECT.iam.gserviceaccount.com" \
+    --role="$ROLE" --condition=None
+done
+```
+
+The candidate profile holds a real resume, so it goes to Secret Manager rather
+than into the image, and access is granted on that one secret rather than
+project-wide:
+
+```bash
+gcloud secrets create career-agent-profile --data-file=profile.json
+gcloud secrets add-iam-policy-binding career-agent-profile \
+  --member="serviceAccount:career-agent-run@$PROJECT.iam.gserviceaccount.com" \
+  --role=roles/secretmanager.secretAccessor
+```
+
+### Deploy
 
 ```bash
 gcloud run deploy career-agent \
-  --source . \
-  --region "$CLOUD_RUN_REGION" \
-  --set-env-vars "$(grep -v '^#' .env | xargs | tr ' ' ',')" \
-  --no-allow-unauthenticated
+  --source . --region us-central1 \
+  --service-account "career-agent-run@$PROJECT.iam.gserviceaccount.com" \
+  --no-allow-unauthenticated \
+  --env-vars-file cloudrun-env.yaml \
+  --set-secrets "/secrets/profile.json=career-agent-profile:latest" \
+  --memory 1Gi --timeout 900 --concurrency 4 --max-instances 3
 ```
 
-Then create a Cloud Scheduler job with an OIDC token targeting the service's
-`/run` URL, and grant the Scheduler service account the Cloud Run Invoker
-role. `--no-allow-unauthenticated` plus that grant is what keeps `/run` from
-being triggerable by anyone who finds the URL -- this repo does not add its
-own auth check on top of that yet, so don't skip it.
+Use `--env-vars-file`, not `--set-env-vars`: several values contain commas
+(`GREENHOUSE_BOARD_SLUGS=anthropic,scaleai,databricks`) and would be parsed as
+separate variables. Set `PROFILE_PATH=/secrets/profile.json` in that file, and
+mount the secret **outside** `/app` so the volume cannot shadow application
+code.
+
+### Schedule it
+
+```bash
+gcloud run services add-iam-policy-binding career-agent --region us-central1 \
+  --member="serviceAccount:career-agent-scheduler@$PROJECT.iam.gserviceaccount.com" \
+  --role=roles/run.invoker
+
+gcloud scheduler jobs create http career-agent-run --location us-central1 \
+  --schedule="0 */12 * * *" --time-zone="Asia/Kolkata" \
+  --uri="$SERVICE_URL/run" --http-method=POST \
+  --oidc-service-account-email="career-agent-scheduler@$PROJECT.iam.gserviceaccount.com" \
+  --oidc-token-audience="$SERVICE_URL" --attempt-deadline=900s
+```
+
+Invoker is granted on the service, not the project, so the scheduler account
+can call this service and nothing else.
+
+### Two things that will waste your time
+
+- **The URL printed by `gcloud run deploy` was not the working one.** Take the
+  URL from `gcloud run services describe ... --format='value(status.url)'`.
+- **`/healthz` never reaches the container.** Google's frontend returns its own
+  404 for that path while every other path serves normally. The health
+  endpoint is `/health`.
+
+### Access
+
+The service is private. To view the UI:
+
+```bash
+gcloud run services proxy career-agent --region us-central1
+```
+
+`--no-allow-unauthenticated` is what keeps a stranger from triggering billable
+runs or reading your job search. If you ever make the service public, set
+`RUN_AUTH_TOKEN` and send it as `X-Run-Token` -- that guards `/run` and
+`/api/quick-add`, though not the UI, which a browser cannot add headers to.
 
 ## What's simplified for the hackathon MVP (and the honest list of caveats)
 

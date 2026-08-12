@@ -1,5 +1,5 @@
 """Cloud Run entrypoint: exposes /run for Cloud Scheduler to trigger the Job
-Search Pipeline, and /healthz for Cloud Run's own health checks.
+Search Pipeline, a review UI at /, and /health for uptime checks.
 
 Local dev:
     uvicorn main:app --reload
@@ -8,30 +8,53 @@ Local dev:
 Interactive demo instead (drive the per-job evaluator by hand in a browser):
     adk web .
 
-Production note: this endpoint has no auth on it yet. Before deploying for
-real, put it behind Cloud Scheduler's OIDC token + a check here (or make the
-Cloud Run service require authentication and grant the Scheduler service
-account the Cloud Run Invoker role), so /run can't be triggered by anyone
-who finds the URL.
+Auth: the service is deployed --no-allow-unauthenticated, so Cloud Run IAM
+rejects unauthenticated requests before they reach this process, and Cloud
+Scheduler invokes /run with an OIDC token. RUN_AUTH_TOKEN adds a second gate
+on the endpoints that spend money, for the case where the service is ever
+made public.
 """
 from __future__ import annotations
 
+import hmac
 import uuid
 from urllib.parse import quote
 
-from fastapi import FastAPI, Form, HTTPException
+from fastapi import Depends, FastAPI, Form, Header, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
-from career_agent import pipeline, quickadd, webui
+from career_agent import config, pipeline, quickadd, webui
 from career_agent.storage import firestore_store
 from career_agent.tools import job_tools
 
 app = FastAPI()
 
 
-@app.get("/healthz")
-def healthz():
+def require_run_token(x_run_token: str = Header(default="")) -> None:
+    """Guards the endpoints that spend money.
+
+    A no-op unless RUN_AUTH_TOKEN is set. Cloud Run IAM is the real gate when
+    the service is deployed --no-allow-unauthenticated; this only matters if
+    the service is ever made public, where an open /run means strangers
+    spending your Vertex budget. Compared with compare_digest so a wrong token
+    cannot be recovered a character at a time from response timings.
+    """
+    if not config.RUN_AUTH_TOKEN:
+        return
+    if not hmac.compare_digest(x_run_token, config.RUN_AUTH_TOKEN):
+        raise HTTPException(status_code=401, detail="Missing or invalid X-Run-Token.")
+
+
+@app.get("/health")
+def health():
+    """Liveness probe.
+
+    NOT /healthz: on Cloud Run that path is swallowed by the Google frontend,
+    which returns its own 404 without the request ever reaching the container.
+    Verified in production -- every other path served normally while /healthz
+    404'd both authenticated and not.
+    """
     return {"status": "ok"}
 
 
@@ -67,7 +90,7 @@ async def _queue_quick_add(url: str, text: str, title: str, company: str) -> str
     return job.job_id
 
 
-@app.post("/api/quick-add")
+@app.post("/api/quick-add", dependencies=[Depends(require_run_token)])
 async def api_quick_add(payload: QuickAddRequest):
     """Queues one user-supplied posting for the next run.
 
@@ -97,7 +120,7 @@ async def quick_add_form(
     return RedirectResponse("/?status=matched&queued=1", status_code=303)
 
 
-@app.post("/run")
+@app.post("/run", dependencies=[Depends(require_run_token)])
 async def run_pipeline_endpoint():
     """Runs one full pass of the Job Search Pipeline.
 

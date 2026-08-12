@@ -12,5 +12,13 @@ __pycache__/
 *.pyc
 .git/
 .gitignore
+
+# Test and dev tooling: the runtime image should carry only what serves
+# requests. Run the suite locally with requirements-dev.txt.
+tests/
+pytest.ini
+requirements-dev.txt
+benchmark_evaluators.py
+
 *.md
 !README.md

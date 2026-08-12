@@ -29,6 +29,18 @@ load_dotenv()
 # their drafts overwrite each other.
 USER_ID = os.environ.get("USER_ID", "owner")
 
+# --- Endpoint auth ---------------------------------------------------------------
+# Defence in depth for the endpoints that cost money. The PRIMARY gate is Cloud
+# Run IAM: deploy with --no-allow-unauthenticated and the platform rejects
+# unauthenticated requests before they reach this process.
+#
+# This token exists for the likely footgun -- someone redeploying with
+# --allow-unauthenticated to share a demo link, which would otherwise let any
+# passer-by trigger billable runs. Unset by default, so it changes nothing
+# until you opt in. It does NOT protect the review UI, which a browser cannot
+# send custom headers to; that stays IAM-protected.
+RUN_AUTH_TOKEN = os.environ.get("RUN_AUTH_TOKEN", "")
+
 # --- GCP / model config ------------------------------------------------------
 GOOGLE_CLOUD_PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", "")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")

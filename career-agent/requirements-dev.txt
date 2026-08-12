@@ -1,0 +1,5 @@
+# Development and test dependencies. Not installed in the container -- see
+# .dockerignore, which keeps tests and this file out of the runtime image.
+-r requirements.txt
+pytest==8.4.2
+pytest-asyncio==1.3.0

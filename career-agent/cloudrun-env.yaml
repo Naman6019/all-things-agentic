@@ -1,0 +1,30 @@
+# Environment for the Cloud Run service. Passed with --env-vars-file rather
+# than --set-env-vars because several values contain commas, which
+# --set-env-vars would parse as separate variables.
+#
+# NO SECRETS HERE -- this file is committed. The candidate profile (which holds
+# a real resume) is mounted from Secret Manager at PROFILE_PATH; SMTP
+# credentials, if you enable email delivery, belong in Secret Manager too.
+GOOGLE_CLOUD_PROJECT: allthingsagentic-505213
+# Must be `global`: Gemini 3.x is only served on Vertex's global endpoint and
+# 404s on regional ones. This is the model endpoint, not the deploy region.
+GOOGLE_CLOUD_LOCATION: global
+GOOGLE_GENAI_USE_VERTEXAI: "TRUE"
+GEMINI_MODEL: gemini-3.6-flash
+
+GREENHOUSE_BOARD_SLUGS: anthropic,scaleai,databricks
+LEVER_BOARD_SLUGS: ""
+ASHBY_BOARD_SLUGS: openai,cohere
+SMARTRECRUITERS_COMPANY_SLUGS: BoschGroup
+ENABLE_ARBEITNOW: "false"
+ENABLE_REMOTIVE: "true"
+ENABLE_REMOTEOK: "true"
+ENABLE_JOBICY: "true"
+
+MAX_JOBS_PER_RUN: "10"
+FIRESTORE_PROJECT: allthingsagentic-505213
+USER_ID: owner
+
+# Mounted from Secret Manager, deliberately outside /app so the secret volume
+# cannot shadow application code.
+PROFILE_PATH: /secrets/profile.json
