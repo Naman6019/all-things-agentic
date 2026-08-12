@@ -17,6 +17,18 @@ from .models import CandidateProfile
 # default when running headless, which is the path Cloud Scheduler uses.
 load_dotenv()
 
+# --- Tenancy -------------------------------------------------------------------
+# Every per-user document is keyed by this. It is a single hardcoded owner
+# today, because there is no auth yet -- but the data model is scoped now so
+# that adding real users later is wiring an identity into this one value rather
+# than migrating every document.
+#
+# The alternative was keying documents by job id alone, which is what this
+# replaced. That silently breaks the moment a second user exists: user A's
+# verdict on a job marks it seen, so user B never sees the posting at all, and
+# their drafts overwrite each other.
+USER_ID = os.environ.get("USER_ID", "owner")
+
 # --- GCP / model config ------------------------------------------------------
 GOOGLE_CLOUD_PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", "")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")

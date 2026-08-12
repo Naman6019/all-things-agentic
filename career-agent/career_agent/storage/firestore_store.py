@@ -1,9 +1,30 @@
-"""Firestore-backed state: job dedupe and application tracking.
+"""Firestore-backed state: the job corpus, per-user dedupe, and application tracking.
 
 Collections:
-  jobs_seen/{job_id}     -- dedupe marker, written once per job the pipeline has fetched
-  applications/{job_id}  -- listing info + evaluation verdict + (if matched) tailored materials
-  (applications docs carry a run_id field so a run's digest can query its own batch)
+
+  jobs/{job_id}
+      The posting itself, including its full description. SHARED -- no user
+      dimension, because a posting's text is identical for every candidate.
+      Fetching is the shared half of this system and evaluation is the per-user
+      half, so re-fetching and re-storing the same posting per user would be
+      pure waste (and pointless extra load on the ATS boards).
+
+  jobs_seen/{user_id}__{job_id}
+      Per-user dedupe marker, written once a verdict exists for that user.
+
+  applications/{user_id}__{job_id}
+      Per-user verdict, plus tailored materials once drafted, plus a small
+      denormalized copy of the display fields so the review UI needs one query
+      rather than a second read per row.
+
+  runs/{run_id}
+      What one run fetched, filtered, evaluated and spent.
+
+Document ids are prefixed with the user rather than merely carrying a user_id
+field: the prefix is what actually prevents two users colliding on the same
+posting. The `__` separator is deliberate -- job ids already contain `:`
+(`greenhouse:anthropic:5115935008`), so a `:` separator would be ambiguous.
+Nothing parses the id back apart; `user_id` and `job_id` are stored as fields.
 """
 from __future__ import annotations
 
@@ -28,15 +49,35 @@ def get_client() -> firestore.Client:
     return _client
 
 
-def find_unseen(jobs: list[JobListing], evaluator: str = "") -> list[JobListing]:
-    """Returns the jobs still worth evaluating. Read-only.
+def _scoped(job_id: str, user_id: str | None = None) -> str:
+    """Document id for a per-user record of one job."""
+    return f"{user_id or config.USER_ID}__{job_id}"
 
-    A job counts as seen when it has a marker AND either it matched, or it was
-    skipped by the same evaluator that is about to run. A job SKIPPED by a
-    different model or against a different candidate profile is offered up
-    again, because a skip is a judgment call and the thing that made it has
-    changed. Matched jobs are never resurfaced -- their verdict and drafts
-    already exist.
+
+def _owner_fields(job_id: str, user_id: str | None = None) -> dict:
+    """The identity fields every per-user document carries."""
+    return {"user_id": user_id or config.USER_ID, "job_id": job_id}
+
+
+def _with_job_id(snapshot) -> dict:
+    """Document contents, with job_id resolved.
+
+    Falls back to the raw document id for records written before ids were
+    user-scoped, so old rows still render instead of showing a blank job.
+    """
+    data = snapshot.to_dict() or {}
+    return dict(data, job_id=data.get("job_id") or snapshot.id)
+
+
+def find_unseen(jobs: list[JobListing], evaluator: str = "") -> list[JobListing]:
+    """Returns the jobs still worth evaluating for the current user. Read-only.
+
+    A job counts as seen when this user has a marker for it AND either it
+    matched, or it was skipped by the same evaluator that is about to run. A job
+    SKIPPED by a different model or against a different candidate profile is
+    offered up again, because a skip is a judgment call and the thing that made
+    it has changed. Matched jobs are never resurfaced -- their verdict and
+    drafts already exist.
 
     Without this, trialling a cheaper evaluator is a one-way door: a wrong skip
     is invisible and permanent, since nothing ever surfaces the job again to
@@ -48,7 +89,8 @@ def find_unseen(jobs: list[JobListing], evaluator: str = "") -> list[JobListing]
     job; a single Greenhouse board can return 500+ postings.
     """
     db = get_client()
-    refs = [db.collection("jobs_seen").document(job.job_id) for job in jobs]
+    doc_ids = [_scoped(job.job_id) for job in jobs]
+    refs = [db.collection("jobs_seen").document(doc_id) for doc_id in doc_ids]
     claimed: set[str] = set()
     for start in range(0, len(refs), _READ_CHUNK):
         for snapshot in db.get_all(refs[start : start + _READ_CHUNK]):
@@ -64,11 +106,11 @@ def find_unseen(jobs: list[JobListing], evaluator: str = "") -> list[JobListing]
                 claimed.add(snapshot.id)
             elif marker.get("evaluator", "") == evaluator:
                 claimed.add(snapshot.id)
-    return [job for job in jobs if job.job_id not in claimed]
+    return [job for job, doc_id in zip(jobs, doc_ids) if doc_id not in claimed]
 
 
 def mark_job_seen(job_id: str, matched: bool = True, evaluator: str = "") -> None:
-    """Records one job's verdict in jobs_seen, so later runs can skip it.
+    """Records one job's verdict in jobs_seen for the current user.
 
     Called only after that job's evaluation has been written -- never at fetch
     time. Marking at fetch time meant any mid-run failure silently burned every
@@ -84,8 +126,9 @@ def mark_job_seen(job_id: str, matched: bool = True, evaluator: str = "") -> Non
     far cheaper failure than a job silently lost forever.
     """
     db = get_client()
-    db.collection("jobs_seen").document(job_id).set(
+    db.collection("jobs_seen").document(_scoped(job_id)).set(
         {
+            **_owner_fields(job_id),
             "seen_at": datetime.now(timezone.utc).isoformat(),
             "matched": matched,
             "evaluator": evaluator,
@@ -95,18 +138,20 @@ def mark_job_seen(job_id: str, matched: bool = True, evaluator: str = "") -> Non
 
 
 def enqueue_quick_add(job: JobListing) -> None:
-    """Queues a user-supplied posting for the next run to evaluate.
+    """Queues a user-supplied posting for that user's next run.
 
     Queued rather than evaluated inline so it goes through exactly the same
     evaluation path as everything else -- one place where verdicts are formed,
     not two that can drift apart.
     """
     db = get_client()
-    db.collection("quick_add_queue").document(job.job_id).set(asdict(job))
+    db.collection("quick_add_queue").document(_scoped(job.job_id)).set(
+        {**asdict(job), **_owner_fields(job.job_id)}
+    )
 
 
 def drain_quick_adds() -> list[JobListing]:
-    """Returns queued quick-adds and clears the queue.
+    """Returns the current user's queued quick-adds and clears them.
 
     Deleted on read: a quick-add is a one-shot request. If its run dies before
     the verdict is stored the job is lost from the queue, which is the same
@@ -114,9 +159,17 @@ def drain_quick_adds() -> list[JobListing]:
     whereas a queue that never drains would re-evaluate forever.
     """
     db = get_client()
+    docs = (
+        db.collection("quick_add_queue")
+        .where(filter=FieldFilter("user_id", "==", config.USER_ID))
+        .stream()
+    )
     jobs = []
-    for doc in db.collection("quick_add_queue").stream():
+    for doc in docs:
         data = doc.to_dict() or {}
+        # user_id is an identity field JobListing does not accept; job_id is a
+        # real field on it and must stay.
+        data.pop("user_id", None)
         try:
             jobs.append(JobListing(**data))
         except TypeError:
@@ -127,9 +180,32 @@ def drain_quick_adds() -> list[JobListing]:
 
 
 def save_job_listing(job: JobListing) -> None:
+    """Writes the posting to the shared corpus, and its display fields to this user.
+
+    The description lives only in `jobs/` -- it is the same text for every user
+    and the largest field by far, so copying it per user would multiply storage
+    for nothing. The small display fields ARE denormalized onto the application,
+    so rendering the review UI stays a single query.
+
+    Note the corpus currently holds only postings that were actually evaluated,
+    not everything fetched. Storing all ~2,500 per run would be ~2,500 writes a
+    run against a 20k/day free tier, for postings the pre-filter already
+    discarded. Full-corpus capture belongs with the shared-fetch scheduler.
+    """
     db = get_client()
-    db.collection("applications").document(job.job_id).set(
+
+    # asdict(job) already carries fetched_at from when this listing was built,
+    # so last_fetched_at is the refresh timestamp. Deliberately no
+    # "first_seen_at": merge=True overwrites whatever fields you pass, so it
+    # would be rewritten on every refetch rather than preserved.
+    db.collection("jobs").document(job.job_id).set(
+        {**asdict(job), "last_fetched_at": datetime.now(timezone.utc).isoformat()},
+        merge=True,
+    )
+
+    db.collection("applications").document(_scoped(job.job_id)).set(
         {
+            **_owner_fields(job.job_id),
             "title": job.title,
             "company": job.company,
             "location": job.location,
@@ -141,10 +217,16 @@ def save_job_listing(job: JobListing) -> None:
     )
 
 
+def get_corpus_job(job_id: str) -> dict:
+    """One posting from the shared corpus, description included."""
+    return (get_client().collection("jobs").document(job_id).get().to_dict()) or {}
+
+
 def save_evaluation(run_id: str, evaluation: JobEvaluation) -> None:
     db = get_client()
-    db.collection("applications").document(evaluation.job_id).set(
+    db.collection("applications").document(_scoped(evaluation.job_id)).set(
         {
+            **_owner_fields(evaluation.job_id),
             "run_id": run_id,
             "match": evaluation.match,
             "unmet_requirements": evaluation.unmet_requirements,
@@ -159,8 +241,9 @@ def save_evaluation(run_id: str, evaluation: JobEvaluation) -> None:
 
 def save_materials(materials: TailoredMaterials) -> None:
     db = get_client()
-    db.collection("applications").document(materials.job_id).set(
+    db.collection("applications").document(_scoped(materials.job_id)).set(
         {
+            **_owner_fields(materials.job_id),
             "tailored_resume_summary": materials.tailored_resume_summary,
             "cover_letter": materials.cover_letter,
             "contact_email": materials.contact_email,
@@ -181,7 +264,12 @@ def save_run_summary(run_id: str, summary: dict) -> None:
     """
     db = get_client()
     db.collection("runs").document(run_id).set(
-        dict(summary, run_id=run_id, recorded_at=datetime.now(timezone.utc).isoformat()),
+        dict(
+            summary,
+            run_id=run_id,
+            user_id=config.USER_ID,
+            recorded_at=datetime.now(timezone.utc).isoformat(),
+        ),
         merge=True,
     )
 
@@ -192,27 +280,40 @@ def get_run_summary(run_id: str) -> dict:
 
 
 def get_applications_by_status(statuses: list[str]) -> list[dict]:
-    """Applications in any of the given statuses, newest verdict first.
+    """The current user's applications in any of the given statuses, newest first.
 
-    Sorted in Python rather than with order_by: combining a where() with an
-    order_by on a different field needs a composite index in Firestore, and
-    this collection is small enough that the sort is free.
+    Filters on user in the query and on status in Python. Combining an `in`
+    filter with an equality on another field is exactly the shape that trips
+    Firestore's composite-index requirement, and the per-user collection is
+    small enough that filtering the rest here costs nothing. Sorting is in
+    Python for the same reason.
     """
     db = get_client()
-    docs = db.collection("applications").where(filter=FieldFilter("status", "in", statuses)).stream()
-    apps = [dict(d.to_dict() or {}, job_id=d.id) for d in docs]
+    docs = (
+        db.collection("applications")
+        .where(filter=FieldFilter("user_id", "==", config.USER_ID))
+        .stream()
+    )
+    wanted = set(statuses)
+    apps = [a for a in (_with_job_id(d) for d in docs) if a.get("status") in wanted]
     apps.sort(key=lambda a: a.get("materials_created_at") or a.get("evaluated_at") or "", reverse=True)
     return apps
 
 
 def get_latest_run_summary() -> dict:
     db = get_client()
-    runs = [d.to_dict() or {} for d in db.collection("runs").stream()]
+    runs = [
+        d.to_dict() or {}
+        for d in db.collection("runs")
+        .where(filter=FieldFilter("user_id", "==", config.USER_ID))
+        .stream()
+    ]
     runs.sort(key=lambda r: r.get("recorded_at", ""), reverse=True)
     return runs[0] if runs else {}
 
 
 def get_run_applications(run_id: str) -> list[dict]:
+    """Applications touched by one run. Run ids are unique, so this needs no user filter."""
     db = get_client()
     docs = db.collection("applications").where(filter=FieldFilter("run_id", "==", run_id)).stream()
-    return [dict(d.to_dict() or {}, job_id=d.id) for d in docs]
+    return [_with_job_id(d) for d in docs]

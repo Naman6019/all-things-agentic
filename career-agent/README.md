@@ -192,6 +192,19 @@ falls back to the flash rate and is flagged in the run summary and the UI.
   change.
 - **No auth on `/run` by default** -- see the Deploy section above. Fine for
   local testing, not fine to leave open once deployed.
+- **Storage is user-scoped, but there is only one user.** Per-user documents
+  are keyed `{user_id}__{job_id}` (`USER_ID`, default `owner`), and postings
+  live once in a shared `jobs/` corpus with their full description. The split
+  is deliberate: fetching is identical for every candidate while evaluation is
+  per-candidate, so the corpus is the half that will be shared when there are
+  real users. Keying by job id alone -- which is what this replaced -- breaks
+  the moment a second user exists, since one user's verdict would mark the
+  posting seen for everyone.
+
+  The corpus currently stores only postings that were actually evaluated.
+  Capturing all ~2,500 fetched per run would be ~2,500 writes against a
+  20k/day free tier, for postings the pre-filter already discarded; that
+  belongs with a shared fetch scheduler.
 - **The profile lives in a local `profile.json`, not Firestore.** Simpler to
   hand-edit for now; move it into a Firestore doc later if you want to edit
   it from a UI instead of a file (see the docstring in `config.py`).
