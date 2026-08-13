@@ -158,6 +158,16 @@ EXCLUDE_TITLE_KEYWORDS = [
     if s.strip()
 ]
 
+# --- Profile enrichment ----------------------------------------------------------
+# The candidate's public work, used to tailor resumes with concrete projects.
+# Cached rather than fetched per job: a person's repositories change weekly at
+# most, while a run evaluates ten postings, and GitHub allows only 60
+# unauthenticated requests an hour. A token raises that to 5,000 and is
+# optional.
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
+GITHUB_MAX_REPOS = int(os.environ.get("GITHUB_MAX_REPOS", "12"))
+PROFILE_SOURCE_MAX_AGE_HOURS = int(os.environ.get("PROFILE_SOURCE_MAX_AGE_HOURS", "24"))
+
 # --- Contact finding -----------------------------------------------------------
 HUNTER_API_KEY = os.environ.get("HUNTER_API_KEY", "")  # optional fallback; see tools/job_tools.find_hiring_contact
 

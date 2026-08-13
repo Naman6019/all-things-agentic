@@ -14,6 +14,7 @@ The ordering here carries the durability guarantees:
 from __future__ import annotations
 
 import uuid
+from dataclasses import asdict
 
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
@@ -22,6 +23,7 @@ from google.genai import types
 from . import agent, config
 from .models import JobEvaluation, JobListing, TailoredMaterials
 from .schemas import DraftedMaterials, JobVerdict
+from .sources import profile_sources
 from .storage import firestore_store
 from .tools import job_tools, notify
 
@@ -83,11 +85,36 @@ async def _ask(llm_agent, model: str, prompt: str, schema, usage: dict[str, dict
 
 def _profile_block() -> str:
     profile = config.load_candidate_profile()
-    from dataclasses import asdict
-
     lines = [f"{k}: {v}" for k, v in asdict(profile).items() if k != "resume_master_text"]
     lines.append(f"resume:\n{profile.resume_master_text}")
     return "\n".join(lines)
+
+
+async def _public_work() -> dict | None:
+    """The candidate's public work, cached. None when unavailable.
+
+    Errors are deliberately not cached: a rate limit is transient, and storing
+    it would suppress enrichment for the whole TTL.
+    """
+    profile = config.load_candidate_profile()
+    if not profile.github_username:
+        return None
+
+    cached = firestore_store.get_profile_source("github", config.PROFILE_SOURCE_MAX_AGE_HOURS)
+    if cached is None:
+        async with job_tools._client() as client:
+            fetched = await profile_sources.fetch_github(
+                profile.github_username,
+                client,
+                max_repos=config.GITHUB_MAX_REPOS,
+                token=config.GITHUB_TOKEN,
+            )
+        cached = asdict(fetched)
+        if fetched.error:
+            print(f"github enrichment unavailable: {fetched.error}")
+        else:
+            firestore_store.save_profile_source("github", cached)
+    return cached
 
 
 def _job_block(job: JobListing) -> str:
@@ -108,13 +135,24 @@ async def run_once(run_id: str) -> dict:
     jobs = await job_tools.collect_new_jobs(run_id, evaluator=evaluator)
 
     profile_block = _profile_block()
+
+    # Fetched once per run. Both stages see it, in different sizes: the
+    # evaluator needs it to credit skills the resume never mentions, or it
+    # rejects jobs the candidate is genuinely qualified for. That is not
+    # hypothetical -- a Django/Celery posting was skipped as "not demonstrated"
+    # while the candidate had a Django REST + Celery + Redis project on GitHub.
+    public_work = (await _public_work()) if jobs else None
+    evidence_brief = profile_sources.as_prompt_block(public_work, compact=True) if public_work else ""
+    evidence_full = profile_sources.as_prompt_block(public_work) if public_work else ""
     matched = 0
 
     for job in jobs:
         verdict: JobVerdict = await _ask(
             agent.evaluator_agent,
             config.EVALUATOR_MODEL,
-            f"CANDIDATE PROFILE\n{profile_block}\n\nJOB POSTING\n{_job_block(job)}",
+            f"CANDIDATE PROFILE\n{profile_block}\n\n"
+            + (f"{evidence_brief}\n\n" if evidence_brief else "")
+            + f"JOB POSTING\n{_job_block(job)}",
             JobVerdict,
             usage,
         )
@@ -141,7 +179,9 @@ async def run_once(run_id: str) -> dict:
         drafted: DraftedMaterials = await _ask(
             agent.drafter_agent,
             config.DRAFTER_MODEL,
-            f"CANDIDATE PROFILE\n{profile_block}\n\nJOB POSTING\n{_job_block(job)}",
+            f"CANDIDATE PROFILE\n{profile_block}\n\n"
+            + (f"{evidence_full}\n\n" if evidence_full else "")
+            + f"JOB POSTING\n{_job_block(job)}",
             DraftedMaterials,
             usage,
         )

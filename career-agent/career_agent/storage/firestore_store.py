@@ -257,6 +257,35 @@ def save_materials(materials: TailoredMaterials) -> None:
     )
 
 
+def save_profile_source(name: str, payload: dict) -> None:
+    """Caches enrichment data (e.g. GitHub) for the current user."""
+    get_client().collection("profile_sources").document(_scoped(name)).set(
+        {**_owner_fields(name), "source": name, "payload": payload,
+         "cached_at": datetime.now(timezone.utc).isoformat()}
+    )
+
+
+def get_profile_source(name: str, max_age_hours: int) -> dict | None:
+    """Returns cached enrichment if it is fresh enough, else None.
+
+    Staleness is checked here rather than by a scheduled refresh so the data
+    can never be older than the caller is willing to accept, and so a first run
+    on a new machine populates it without extra wiring.
+    """
+    snapshot = get_client().collection("profile_sources").document(_scoped(name)).get()
+    if not snapshot.exists:
+        return None
+    doc = snapshot.to_dict() or {}
+    cached_at = doc.get("cached_at")
+    if not cached_at:
+        return None
+    try:
+        age = datetime.now(timezone.utc) - datetime.fromisoformat(cached_at)
+    except ValueError:
+        return None
+    return doc.get("payload") if age.total_seconds() < max_age_hours * 3600 else None
+
+
 def get_application(job_id: str) -> dict:
     """One application for the current user."""
     snapshot = get_client().collection("applications").document(_scoped(job_id)).get()

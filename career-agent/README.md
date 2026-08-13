@@ -108,6 +108,42 @@ and the URL is kept as the link to apply from. Automated retrieval on those
 sites is what gets accounts banned, which is the whole reason they aren't
 sources.
 
+## Public work as evidence (GitHub)
+
+Set `github_username` in `profile.json` and the pipeline pulls the candidate's
+public repositories — name, language, topics, and a README excerpt — and gives
+them to both model stages.
+
+This matters more than it sounds. A resume is a summary written months ago; a
+person's repositories are current and specific. In testing, a Django/Celery
+posting was **skipped** as "not demonstrated in the candidate's profile" while
+the candidate had a Django REST + Celery Beat + Redis project on GitHub. With
+enrichment the same posting matched, and the tailored resume led with that
+project and a B2B API platform — neither of which the resume mentions.
+
+Notes on how it is wired:
+
+- **Cached** in Firestore (`PROFILE_SOURCE_MAX_AGE_HOURS`, default 24h). A
+  person's repositories change weekly at most, while a run evaluates ten
+  postings, and GitHub allows 60 unauthenticated requests an hour. Set
+  `GITHUB_TOKEN` to raise that to 5,000.
+- **Two sizes.** The evaluator runs once per job and gets a compact form; the
+  drafter runs once per match and gets full README excerpts. Both keep an
+  excerpt, because most repositories have no description and the README is the
+  only place the stack is stated.
+- **Forks are excluded**, and both prompts state that a repository name alone
+  proves nothing — more material about the candidate raises the risk the model
+  embellishes.
+- **Failure is non-fatal.** A rate limit or outage returns an error that is
+  logged and not cached; the run drafts without it.
+
+**LinkedIn is not supported, and cannot be.** There is no lawful automated way
+to read a profile: the API is partner-gated, "Sign In with LinkedIn" returns
+only name, email and photo, and scraping is prohibited by the User Agreement —
+the same rule that keeps LinkedIn out of the job sources. The lawful route is
+the member's own export (Settings → Get a copy of your data), which is a file
+you upload rather than something this code fetches. Not yet implemented.
+
 ## Tests
 
 ```bash

@@ -48,6 +48,11 @@ class CandidateProfile:
     # re-extracting them from the resume blob on every draft invites drift.
     full_name: str = ""
     contact_line: str = ""
+    # Public work the resume does not mention. Fetched from GitHub's public API
+    # and cached; see sources/profile_sources.py. LinkedIn deliberately has no
+    # equivalent field -- there is no lawful automated way to read a profile,
+    # so it is imported from the member's own data export instead.
+    github_username: str = ""
 
 
 @dataclass

@@ -49,6 +49,12 @@ Salary: the profile's min_salary is in min_salary_currency, which is usually
 not the currency the posting quotes. Convert before comparing, say so in your
 reasoning, and treat it as NOT STATED when the posting gives no figure.
 
+A PUBLIC WORK section may follow the profile, listing the candidate's real
+repositories. Skills demonstrated there are genuine hands-on experience and
+count toward a requirement even when the resume never mentions them -- a
+person's resume is a summary, not an inventory. Judge only what is stated
+there; a repository name alone proves nothing.
+
 Unmet requirements must be specific and in plain language -- never a generic
 "not a fit".
 """
@@ -71,6 +77,11 @@ The resume is a REORGANIZATION of the candidate's real history, not a new one:
 - Keep real numbers exactly as stated. Never inflate or round them up.
 - Include every skill the profile claims that is relevant; add none it doesn't.
 - Drop entries that are irrelevant to this posting rather than padding.
+- A PUBLIC WORK section may follow the profile, listing the candidate's real
+  repositories. Treat it as evidence, not resume copy: you may add a project
+  from it when it matches this posting, but describe it ONLY as its
+  description or README states. A repository name is not proof of what it
+  does, and star counts are not achievements.
 
 If you are unsure whether something is true of the candidate, leave it out. An
 inflated claim costs them the interview, and it is their name on the document.
