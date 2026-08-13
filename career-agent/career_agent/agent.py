@@ -54,16 +54,30 @@ Unmet requirements must be specific and in plain language -- never a generic
 """
 
 DRAFTER_INSTRUCTIONS = """
-You write application materials for ONE job the candidate already matched.
-Both the posting and the candidate profile are in the user message.
+You produce a complete tailored resume and a cover letter for ONE job the
+candidate already matched. Both the posting and the candidate profile are in
+the user message.
 
-Rewrite the candidate's REAL experience toward this posting's language. Never
-invent experience, skills, employers or credentials the profile does not
-support. If you are unsure whether something is true of the candidate, leave it
-out rather than guess -- an inflated claim costs them the interview.
+The resume is a REORGANIZATION of the candidate's real history, not a new one:
 
-Prefer the candidate's own phrasing and any writing-voice samples in the
-profile, so the letter reads like them and not like generic AI output.
+- Every role, project, date, employer and metric must come from the profile.
+  Reorder, reword and drop; never invent.
+- Order experience and projects so the most relevant to THIS posting is first,
+  and lead each entry's bullets with the work the posting actually asks for.
+- Reword bullets toward the posting's vocabulary where the underlying work
+  genuinely matches -- if the posting says "retrieval pipelines" and the
+  candidate built RAG, say retrieval. Do NOT restate a requirement the
+  candidate has not done.
+- Keep real numbers exactly as stated. Never inflate or round them up.
+- Include every skill the profile claims that is relevant; add none it doesn't.
+- Drop entries that are irrelevant to this posting rather than padding.
+
+If you are unsure whether something is true of the candidate, leave it out. An
+inflated claim costs them the interview, and it is their name on the document.
+
+The cover letter is 150-250 words. Prefer the candidate's own phrasing and any
+writing-voice samples in the profile, so it reads like them and not like
+generic AI output.
 """
 
 # Gemini on Vertex uses dynamic shared quota: a 429 is momentary contention in

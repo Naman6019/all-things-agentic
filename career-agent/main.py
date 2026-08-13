@@ -24,7 +24,7 @@ from fastapi import Depends, FastAPI, Form, Header, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
-from career_agent import config, pipeline, quickadd, webui
+from career_agent import config, pipeline, quickadd, resume_render, webui
 from career_agent.storage import firestore_store
 from career_agent.tools import job_tools
 
@@ -67,6 +67,42 @@ def review_ui(status: str = "matched", queued: int = 0, error: str = ""):
     rather than submitting anything.
     """
     return webui.render(status, queued=bool(queued), error=error)
+
+
+@app.get("/resume", response_class=HTMLResponse)
+def tailored_resume(job_id: str):
+    """The tailored resume for one job, as a printable document.
+
+    Served as HTML rather than a generated PDF so it needs no rendering
+    dependency in the container: the browser's Print -> Save as PDF produces
+    the file to attach, and the print stylesheet drops the on-screen controls.
+    """
+    app_doc = firestore_store.get_application(job_id)
+    if not app_doc:
+        raise HTTPException(status_code=404, detail="No application for that job_id.")
+    resume = app_doc.get("tailored_resume")
+    if not resume:
+        raise HTTPException(
+            status_code=404,
+            detail="No tailored resume for this job. It was drafted before resumes were generated.",
+        )
+    profile = config.load_candidate_profile()
+    return resume_render.render(
+        resume,
+        name=profile.full_name,
+        contact_line=profile.contact_line,
+        job_title=app_doc.get("title", ""),
+        company=app_doc.get("company", ""),
+    )
+
+
+@app.post("/applications/status")
+def set_status(job_id: str = Form(...), status: str = Form(...)):
+    """Marks a job applied (or back to drafted); redirects to the review page."""
+    if status not in ("applied", "drafted"):
+        raise HTTPException(status_code=400, detail="status must be 'applied' or 'drafted'.")
+    firestore_store.set_application_status(job_id, status)
+    return RedirectResponse(f"/?status={'applied' if status == 'applied' else 'matched'}", status_code=303)
 
 
 @app.get("/api/jobs")

@@ -148,7 +148,7 @@ async def run_once(run_id: str) -> dict:
         firestore_store.save_materials(
             TailoredMaterials(
                 job_id=job.job_id,
-                tailored_resume_summary=drafted.tailored_resume_summary,
+                tailored_resume=drafted.tailored_resume.model_dump(),
                 cover_letter=drafted.cover_letter,
                 contact_email=contact.get("email"),
                 contact_source=contact.get("source"),

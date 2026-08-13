@@ -64,14 +64,31 @@ curl -X POST http://localhost:8080/run
 
 **Review UI** -- open <http://localhost:8080/> after a run. Server-rendered
 from Firestore, no build step and no external assets, so it deploys with the
-service and renders offline. Shows each matched job with its JD link, why it
-matched, anything the posting never stated that you should verify, and the
-drafted resume bullets and cover letter. `?status=skipped` shows the
-rejections with their specific unmet requirements, and `/api/jobs` returns
-the same data as JSON.
+service and renders offline. Three tabs: **To apply**, **Applied**, and
+**Skipped** (rejections with their specific unmet requirements). `/api/jobs`
+returns the same data as JSON.
 
-It is read-only on purpose: it links out to the posting rather than
-submitting anything, per the guardrail this project is built around.
+Each matched job shows its JD link, why it matched, anything the posting never
+stated that you should verify, a contact address with an honest confidence
+label, and:
+
+- **Open tailored resume** -- a complete resume reorganized for that posting,
+  served at `/resume?job_id=...` as a printable document. Print / Save as PDF
+  produces the file to attach. The model decides what to lead with and how to
+  word it; layout is deterministic in `career_agent/resume_render.py`, so
+  every resume looks identical and a formatting change needs no model call.
+  It is a *reorganization* of your real history -- reorder, reword, drop, but
+  never invent, and real numbers are preserved exactly.
+- **Copy cover letter** -- one click. Falls back to `execCommand` because
+  `navigator.clipboard` is unavailable on the non-HTTPS origin that
+  `gcloud run services proxy` gives you.
+- **Mark as applied** -- moves the job to the Applied tab. The pipeline's own
+  statuses stop at `drafted`, which is where the agent's work ends; this is
+  the human half of the loop, and without it there is no way to tell a job
+  drafted last week from one already applied to.
+
+The agent never submits anything. It finds, judges, drafts, and hands you the
+link and the documents -- per the guardrail this project is built around.
 
 **Quick-add** -- for anything the feeds miss. Use the "Add a posting you
 found yourself" box on the review page, or:

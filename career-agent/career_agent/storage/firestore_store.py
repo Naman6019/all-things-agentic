@@ -245,12 +245,37 @@ def save_materials(materials: TailoredMaterials) -> None:
         {
             **_owner_fields(materials.job_id),
             "tailored_resume_summary": materials.tailored_resume_summary,
+            "tailored_resume": materials.tailored_resume,
             "cover_letter": materials.cover_letter,
             "contact_email": materials.contact_email,
             "contact_source": materials.contact_source,
             "contact_confidence": materials.contact_confidence,
             "materials_created_at": materials.created_at,
             "status": "drafted",
+        },
+        merge=True,
+    )
+
+
+def get_application(job_id: str) -> dict:
+    """One application for the current user."""
+    snapshot = get_client().collection("applications").document(_scoped(job_id)).get()
+    return _with_job_id(snapshot) if snapshot.exists else {}
+
+
+def set_application_status(job_id: str, status: str) -> None:
+    """Records that the candidate acted on a job.
+
+    The pipeline's own statuses stop at `drafted`, which is where the agent's
+    work ends. This is the human half of the loop: without it there is no way
+    to tell a job drafted last week from one already applied to, and no basis
+    for any follow-up view later.
+    """
+    get_client().collection("applications").document(_scoped(job_id)).set(
+        {
+            **_owner_fields(job_id),
+            "status": status,
+            "status_changed_at": datetime.now(timezone.utc).isoformat(),
         },
         merge=True,
     )

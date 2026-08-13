@@ -38,13 +38,59 @@ class JobVerdict(BaseModel):
     reasoning: str = Field(description="One or two sentences explaining the verdict.")
 
 
+class ResumeEntry(BaseModel):
+    """One role, project or credential on the resume."""
+
+    title: str = Field(description="Role or project name, exactly as the candidate states it.")
+    organization: str = Field(default="", description="Employer, client or 'Personal project'.")
+    dates: str = Field(default="", description="Date range as the candidate states it. Never invent dates.")
+    bullets: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Achievement lines for this entry, reworded toward the posting's language and "
+            "reordered so the most relevant comes first. Keep the candidate's real metrics."
+        ),
+    )
+
+
+class TailoredResume(BaseModel):
+    """A complete resume, reorganized for one posting.
+
+    Structured rather than a blob of markdown so it renders deterministically to
+    a consistent document. The model decides what to emphasise and how to word
+    it; layout is not its job.
+    """
+
+    headline: str = Field(
+        description="One line under the name, e.g. 'AI/ML Engineer - LLMs, RAG, Multi-Agent Systems'."
+    )
+    summary: str = Field(
+        description="2-3 sentences positioning the candidate for THIS posting, using only real experience."
+    )
+    skills: list[str] = Field(
+        default_factory=list,
+        description=(
+            "The candidate's real skills, filtered and ordered so those the posting asks for "
+            "come first. Never add a skill the profile does not claim."
+        ),
+    )
+    experience: list[ResumeEntry] = Field(default_factory=list, description="Paid roles, most recent first.")
+    projects: list[ResumeEntry] = Field(
+        default_factory=list, description="Projects, most relevant to this posting first."
+    )
+    education: list[str] = Field(
+        default_factory=list, description="Degrees, certifications and publications, one per line."
+    )
+
+
 class DraftedMaterials(BaseModel):
     """Application materials for a job that matched."""
 
-    tailored_resume_summary: str = Field(
+    tailored_resume: TailoredResume = Field(
         description=(
-            "3-5 bullet points rewriting the candidate's real experience toward this "
-            "posting's language. Never fabricate experience, skills or credentials."
+            "The candidate's full resume, reorganized and reworded for this posting. "
+            "Every entry must correspond to something in the candidate's profile -- "
+            "reorder, reword and drop, but never invent."
         )
     )
     cover_letter: str = Field(description="A 150-250 word cover letter for this posting.")

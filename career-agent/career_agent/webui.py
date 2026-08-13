@@ -11,6 +11,7 @@ decides. Nothing here submits an application.
 from __future__ import annotations
 
 from html import escape
+from urllib.parse import quote
 
 from .storage import firestore_store
 
@@ -90,6 +91,15 @@ pre {
   color: var(--bg); background: var(--ink); border: 0; border-radius: 6px; padding: 8px 16px;
 }
 .add .hint { color: var(--muted); font-size: 12.5px; margin-top: 8px; }
+.actions { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+.act {
+  font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; text-decoration: none;
+  color: var(--bg); background: var(--ink); border: 1px solid var(--ink);
+  border-radius: 6px; padding: 6px 12px;
+}
+.act.ghost { color: var(--muted); background: none; border-color: var(--line); }
+.act.ghost:hover { color: var(--ink); border-color: var(--muted); }
+.actions .hint { color: var(--muted); font-size: 12px; }
 .flash { border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-size: 13.5px; }
 .flash.ok { background: var(--chip); color: var(--accent); }
 .flash.err { background: var(--chip); color: var(--bad); }
@@ -98,7 +108,8 @@ pre {
 """
 
 _STATUS_TABS = [
-    ("matched", "Matched", ["matched", "drafted"]),
+    ("matched", "To apply", ["matched", "drafted"]),
+    ("applied", "Applied", ["applied"]),
     ("skipped", "Skipped", ["skipped"]),
 ]
 
@@ -149,15 +160,48 @@ def _card(app: dict) -> str:
         parts.append('<div class="lab">Not stated in the posting &mdash; verify</div>')
         parts.append(f'<ul>{_list(app["missing_information"], "warn")}</ul>')
 
-    if app.get("tailored_resume_summary") or app.get("cover_letter"):
+    job_id = str(app.get("job_id") or "")
+    if app.get("tailored_resume") or app.get("tailored_resume_summary") or app.get("cover_letter"):
         parts.append("<details><summary>Drafted application materials</summary>")
-        if app.get("tailored_resume_summary"):
+
+        if app.get("tailored_resume"):
+            parts.append(
+                '<div class="actions">'
+                f'<a class="act" href="/resume?job_id={quote(job_id)}" target="_blank" rel="noopener">'
+                "Open tailored resume &rarr;</a>"
+                '<span class="hint">Opens a printable document &mdash; Print / Save as PDF to attach</span>'
+                "</div>"
+            )
+        elif app.get("tailored_resume_summary"):
+            # Drafted before full resumes existed.
             parts.append('<div class="lab">Tailored resume bullets</div>')
             parts.append(f'<pre>{escape(str(app["tailored_resume_summary"]))}</pre>')
+
         if app.get("cover_letter"):
+            letter = str(app["cover_letter"])
             parts.append('<div class="lab">Cover letter</div>')
-            parts.append(f'<pre>{escape(str(app["cover_letter"]))}</pre>')
+            parts.append(f'<pre id="cl-{escape(job_id)}">{escape(letter)}</pre>')
+            parts.append(
+                '<div class="actions">'
+                f"""<button class="act" onclick="copyText('cl-{escape(job_id)}', this)">Copy cover letter</button>"""
+                "</div>"
+            )
         parts.append("</details>")
+
+    if app.get("status") in ("matched", "drafted"):
+        parts.append(
+            '<form class="actions" method="post" action="/applications/status">'
+            f'<input type="hidden" name="job_id" value="{escape(job_id)}">'
+            '<input type="hidden" name="status" value="applied">'
+            '<button class="act ghost" type="submit">Mark as applied</button></form>'
+        )
+    elif app.get("status") == "applied":
+        parts.append(
+            '<form class="actions" method="post" action="/applications/status">'
+            f'<input type="hidden" name="job_id" value="{escape(job_id)}">'
+            '<input type="hidden" name="status" value="drafted">'
+            '<button class="act ghost" type="submit">Undo &mdash; not applied</button></form>'
+        )
 
     parts.append("</div>")
     return "".join(parts)
@@ -270,5 +314,24 @@ def render(status: str = "matched", queued: bool = False, error: str = "") -> st
         f'<div class="tabs">{tabs}</div>'
         f"{_flash(queued, error)}{_QUICK_ADD_FORM}"
         f"{body}{_stats(summary)}"
-        "</div></body></html>"
+        "</div>"
+        # Inline, no library: the page must keep working with no network.
+        # execCommand is the fallback because navigator.clipboard is unavailable
+        # on non-HTTPS origins, which includes the local `gcloud run proxy`.
+        "<script>"
+        "function copyText(id, btn) {"
+        "  var el = document.getElementById(id); if (!el) return;"
+        "  var text = el.innerText;"
+        "  var done = function () { var o = btn.textContent; btn.textContent = 'Copied';"
+        "    setTimeout(function () { btn.textContent = o; }, 1500); };"
+        "  if (navigator.clipboard && window.isSecureContext) {"
+        "    navigator.clipboard.writeText(text).then(done);"
+        "  } else {"
+        "    var t = document.createElement('textarea'); t.value = text;"
+        "    document.body.appendChild(t); t.select();"
+        "    try { document.execCommand('copy'); done(); } finally { document.body.removeChild(t); }"
+        "  }"
+        "}"
+        "</script>"
+        "</body></html>"
     )

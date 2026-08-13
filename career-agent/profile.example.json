@@ -11,5 +11,7 @@
   "writing_voice_samples": [
     "Optional: paste a paragraph or two of your own writing so drafts sound like you, not generic AI."
   ],
-  "portfolio_links": ["https://yourportfolio.com"]
+  "portfolio_links": ["https://yourportfolio.com"],
+  "full_name": "Your Name",
+  "contact_line": "City, Country  |  you@example.com  |  yourportfolio.com  |  github.com/you"
 }
