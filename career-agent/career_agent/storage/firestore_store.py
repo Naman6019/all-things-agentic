@@ -248,6 +248,7 @@ def save_materials(materials: TailoredMaterials) -> None:
             "cover_letter": materials.cover_letter,
             "contact_email": materials.contact_email,
             "contact_source": materials.contact_source,
+            "contact_confidence": materials.contact_confidence,
             "materials_created_at": materials.created_at,
             "status": "drafted",
         },

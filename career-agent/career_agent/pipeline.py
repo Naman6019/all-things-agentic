@@ -152,6 +152,7 @@ async def run_once(run_id: str) -> dict:
                 cover_letter=drafted.cover_letter,
                 contact_email=contact.get("email"),
                 contact_source=contact.get("source"),
+                contact_confidence=contact.get("confidence"),
             )
         )
 

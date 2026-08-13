@@ -71,4 +71,8 @@ class TailoredMaterials:
     cover_letter: str
     contact_email: Optional[str] = None
     contact_source: Optional[str] = None
+    # high / medium / low. Shown to the candidate because "found in the posting"
+    # and "this is where applications go" are different claims, and only one of
+    # them is safe to act on without checking.
+    contact_confidence: Optional[str] = None
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())

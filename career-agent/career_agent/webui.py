@@ -108,7 +108,13 @@ def _chips(app: dict) -> str:
     if app.get("remote"):
         bits.append("remote")
     if app.get("contact_email"):
-        bits.append(f"{app['contact_email']} ({app.get('contact_source', '?')})")
+        # Confidence is shown, not just the source: a medium/low address is a
+        # lead to check, and presenting it as settled is how someone emails an
+        # accessibility desk with a cover letter.
+        confidence = app.get("contact_confidence")
+        label = f"{app['contact_email']} ({app.get('contact_source', '?')}"
+        label += f", {confidence} confidence)" if confidence else ")"
+        bits.append(label)
     return "".join(f'<span class="chip">{escape(str(b))}</span>' for b in bits)
 
 

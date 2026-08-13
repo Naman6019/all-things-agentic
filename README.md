@@ -15,6 +15,61 @@ than a chat reply.
 | [`career-agent/`](career-agent/) | The pipeline. **Start with its [README](career-agent/README.md)** for setup, running, and the honest list of caveats. |
 | [`hackathon-project-plan.md`](hackathon-project-plan.md) | Design rationale, the anti-automation guardrails that shaped the architecture, and scope decisions. |
 
+## Architecture
+
+```mermaid
+flowchart TB
+    SCHED["Cloud Scheduler<br/>every 12h"]
+
+    subgraph SOURCES["Job sources — public APIs, never scraped"]
+        ATS["Company boards<br/>Greenhouse · Lever · Ashby · SmartRecruiters"]
+        AGG["Aggregator feeds<br/>Arbeitnow · Remotive · RemoteOK · Jobicy"]
+    end
+
+    subgraph RUN["Cloud Run — private, least-privilege SA"]
+        FETCH["1 · Fetch<br/>~2,500 postings"]
+        DEDUPE["2 · Drop already-judged"]
+        FILTER["3 · Pre-filter in Python<br/>title + seniority<br/>~91% dropped, each counted"]
+        CAP["4 · Cap per run"]
+        EVAL["5 · Evaluate — one call per job"]
+        DRAFT["6 · Draft — one call per match"]
+        DIGEST["7 · Digest + review UI"]
+    end
+
+    VERTEX["Vertex AI · Gemini 3.6 Flash<br/>structured output"]
+    SM["Secret Manager<br/>candidate profile"]
+    FS[("Firestore<br/>jobs · jobs_seen<br/>applications · runs")]
+    HUMAN(["Human reviews,<br/>opens the JD, applies"])
+
+    SCHED -->|OIDC| FETCH
+    ATS --> FETCH
+    AGG --> FETCH
+    FETCH --> DEDUPE --> FILTER --> CAP --> EVAL
+    EVAL -->|match| DRAFT
+    EVAL -->|no match, with reasons| DIGEST
+    DRAFT --> DIGEST
+    DIGEST --> HUMAN
+
+    EVAL <--> VERTEX
+    DRAFT <--> VERTEX
+    SM -. mounted at runtime .-> EVAL
+    DEDUPE <--> FS
+    EVAL --> FS
+    DRAFT --> FS
+    DIGEST <--> FS
+```
+
+Three things the diagram is meant to make obvious:
+
+- **The model is not the control flow.** Steps 1–4 and 7 are ordinary Python.
+  The model is called once per job to judge it and once per match to draft.
+  Driving the whole loop as one conversation cost ~4× more and could silently
+  skip a job.
+- **The cheap filter runs before the expensive one.** Roughly 91% of postings
+  are dropped deterministically before any model call, and every drop is
+  counted by reason so nothing disappears silently.
+- **The arrow stops at the human.** Nothing here submits an application.
+
 ## How it works
 
 Cloud Scheduler triggers `POST /run` on Cloud Run. From there the control flow

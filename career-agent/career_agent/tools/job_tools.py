@@ -113,16 +113,67 @@ async def collect_new_jobs(
     return batch
 
 
+# Requires the address to end in letters, so a sentence-final full stop is not
+# swallowed. The old pattern ended in [\w.-]+ and produced
+# "accommodations@scale.com." -- an address that does not exist.
+_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)*\.[A-Za-z]{2,}")
+
+# Mailboxes that legitimately appear in postings and are NOT hiring contacts.
+# Writing to these is worse than sending nothing: an accessibility or privacy
+# desk is not going to forward a speculative application, and it wastes the
+# one impression the candidate gets. A real posting produced
+# "accommodations@scale.com", which the old code reported as high confidence.
+_NON_HIRING_MAILBOXES = (
+    "accommodation", "accessibility", "ada", "privacy", "legal", "compliance",
+    "dpo", "gdpr", "security", "abuse", "noreply", "no-reply", "donotreply",
+    "unsubscribe", "webmaster", "postmaster", "press", "media", "marketing",
+    "sales", "billing", "invoice", "support", "help", "helpdesk",
+)
+
+# Local parts that indicate an actual hiring channel.
+_HIRING_MAILBOXES = (
+    "career", "job", "recruit", "talent", "hiring", "hire", "apply",
+    "application", "resume", "cv", "hr", "people", "staffing", "work",
+)
+
+
+def _classify_contact(email: str) -> str | None:
+    """Returns a confidence for an address found in posting text, or None to reject.
+
+    Three outcomes rather than two, because "some address appears in the text"
+    and "this is where applications go" are different claims and the candidate
+    acts on them differently.
+    """
+    local = email.split("@", 1)[0].lower()
+    if any(bad in local for bad in _NON_HIRING_MAILBOXES):
+        return None
+    if any(good in local for good in _HIRING_MAILBOXES):
+        return "high"
+    # A named or generic address that is not obviously either -- plausible, but
+    # the candidate should look before writing to it.
+    return "medium"
+
+
 async def find_hiring_contact(company: str, job_description: str, job_url: str) -> dict:
     """Looks for a publicly available hiring contact, for a job already matched.
 
-    Conservative on purpose: an address found in the posting text or returned by
-    Hunter is reported as high confidence, and a constructed careers@ address is
-    clearly labelled a guess so it is checked before anyone writes to it.
+    Scans every address in the posting rather than taking the first, because
+    postings routinely list an accessibility or privacy mailbox before the
+    hiring one. Rejected mailboxes are skipped entirely; a hiring-looking
+    address wins over a merely plausible one.
     """
-    email_match = re.search(r"[\w.+-]+@[\w-]+\.[\w.-]+", job_description or "")
-    if email_match:
-        return {"email": email_match.group(0), "source": "job_posting_text", "confidence": "high"}
+    best: tuple[str, str] | None = None
+    for email in _EMAIL_RE.findall(job_description or ""):
+        confidence = _classify_contact(email)
+        if confidence is None:
+            continue
+        if confidence == "high":
+            best = (email, confidence)
+            break
+        if best is None:
+            best = (email, confidence)
+    if best:
+        return {"email": best[0], "source": "job_posting_text", "confidence": best[1]}
 
     if config.HUNTER_API_KEY:
         try:

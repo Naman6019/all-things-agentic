@@ -20,7 +20,11 @@ def _render_digest(matched: list[dict], skipped: list[dict], run_id: str, summar
     for a in matched:
         lines.append(f"- {a.get('title')} @ {a.get('company')} -- {a.get('url')}")
         if a.get("contact_email"):
-            lines.append(f"    contact: {a['contact_email']} ({a.get('contact_source')})")
+            confidence = a.get("contact_confidence") or "unknown"
+            lines.append(
+                f"    contact: {a['contact_email']} "
+                f"({a.get('contact_source')}, {confidence} confidence)"
+            )
         for unknown in a.get("missing_information") or []:
             lines.append(f"    verify: {unknown}")
         lines.append(f"    draft resume + cover letter saved -- see applications/{a.get('job_id')} in Firestore")
