@@ -257,6 +257,29 @@ def save_materials(materials: TailoredMaterials) -> None:
     )
 
 
+def get_profile() -> dict | None:
+    """The current user's stored profile, or None if they have never saved one."""
+    snapshot = get_client().collection("profiles").document(config.USER_ID).get()
+    if not snapshot.exists:
+        return None
+    doc = snapshot.to_dict() or {}
+    doc.pop("user_id", None)
+    doc.pop("updated_at", None)
+    return doc or None
+
+
+def save_profile(data: dict) -> None:
+    """Writes the profile the agent reads.
+
+    Firestore rather than the JSON file because the file is the read-only
+    Secret Manager mount in production -- the service cannot write to it, so a
+    profile editor has nowhere to save without this.
+    """
+    get_client().collection("profiles").document(config.USER_ID).set(
+        {**data, "user_id": config.USER_ID, "updated_at": datetime.now(timezone.utc).isoformat()}
+    )
+
+
 def save_profile_source(name: str, payload: dict) -> None:
     """Caches enrichment data (e.g. GitHub) for the current user."""
     get_client().collection("profile_sources").document(_scoped(name)).set(

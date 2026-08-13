@@ -5,7 +5,6 @@ import hashlib
 import json
 import os
 from dataclasses import asdict
-from functools import lru_cache
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -181,22 +180,60 @@ FIRESTORE_PROJECT = os.environ.get("FIRESTORE_PROJECT", GOOGLE_CLOUD_PROJECT)
 PROFILE_PATH = Path(os.environ.get("PROFILE_PATH", "profile.json"))
 
 
-@lru_cache(maxsize=1)
-def load_candidate_profile() -> CandidateProfile:
-    """Loads the candidate's job-search profile from a local JSON file.
+_profile_cache: CandidateProfile | None = None
 
-    MVP simplification: the profile lives in a JSON file (see
-    profile.example.json) rather than Firestore, since it's edited by hand
-    far more often than it's read programmatically. Move it to a Firestore
-    doc later if you want to edit it from a UI instead of a file.
+
+def _profile_from_dict(data: dict) -> CandidateProfile:
+    """Builds a profile, ignoring keys the dataclass does not know.
+
+    Stored profiles outlive the schema: a field removed in code must not make
+    every saved profile unloadable.
     """
+    known = {f for f in CandidateProfile.__dataclass_fields__}
+    return CandidateProfile(**{k: v for k, v in data.items() if k in known})
+
+
+def load_candidate_profile() -> CandidateProfile:
+    """The candidate's profile: Firestore if saved, else the JSON file.
+
+    Firestore is authoritative once the profile has been edited in the UI. The
+    file remains the bootstrap path -- a fresh install, local development, and
+    the read-only Secret Manager mount on Cloud Run, which is precisely why the
+    editor cannot write back to it.
+
+    Cached manually rather than with lru_cache so saving can invalidate it; a
+    cached profile that ignores an edit is worse than no cache.
+    """
+    global _profile_cache
+    if _profile_cache is not None:
+        return _profile_cache
+
+    from .storage import firestore_store  # local import: firestore_store imports config
+
+    stored = None
+    try:
+        stored = firestore_store.get_profile()
+    except Exception as e:  # noqa: BLE001 - fall back to the file rather than fail to start
+        print(f"could not read profile from Firestore, falling back to file: {type(e).__name__}: {e}")
+
+    if stored:
+        _profile_cache = _profile_from_dict(stored)
+        return _profile_cache
+
     if not PROFILE_PATH.exists():
         raise FileNotFoundError(
-            f"No profile found at {PROFILE_PATH}. Copy profile.example.json to "
-            f"{PROFILE_PATH} and fill in your details."
+            f"No profile in Firestore and no file at {PROFILE_PATH}. Copy "
+            f"profile.example.json to {PROFILE_PATH} and fill in your details, "
+            "or save one from the /profile page."
         )
-    data = json.loads(PROFILE_PATH.read_text())
-    return CandidateProfile(**data)
+    _profile_cache = _profile_from_dict(json.loads(PROFILE_PATH.read_text()))
+    return _profile_cache
+
+
+def invalidate_profile_cache() -> None:
+    """Call after saving; the next read picks up the change."""
+    global _profile_cache
+    _profile_cache = None
 
 
 # --- Re-evaluating skipped jobs -------------------------------------------------

@@ -329,6 +329,14 @@ falls back to the flash rate and is flagged in the run summary and the UI.
   change.
 - **No auth on `/run` by default** -- see the Deploy section above. Fine for
   local testing, not fine to leave open once deployed.
+- **The profile is edited at `/profile`, and stored in Firestore.** The JSON
+  file remains the bootstrap path -- a fresh install, local development, and
+  the Secret Manager mount on Cloud Run. That mount is *read-only*, which is
+  the reason the editor cannot write back to the file and why saved profiles
+  go to Firestore instead. Firestore wins once a profile has been saved.
+
+  Editing the profile changes its fingerprint, which puts previously skipped
+  jobs back in the queue. The editor says so before you save.
 - **Storage is user-scoped, but there is only one user.** Per-user documents
   are keyed `{user_id}__{job_id}` (`USER_ID`, default `owner`), and postings
   live once in a shared `jobs/` corpus with their full description. The split

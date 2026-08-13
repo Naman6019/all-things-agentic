@@ -297,6 +297,7 @@ def render(status: str = "matched", queued: bool = False, error: str = "") -> st
         f'<a class="tab{" on" if key == active[0] else ""}" href="/?status={key}">{escape(label)}</a>'
         for key, label, _ in _STATUS_TABS
     )
+    tabs += '<a class="tab" href="/profile">Profile</a>'
     body = (
         "".join(_card(a) for a in apps)
         if apps

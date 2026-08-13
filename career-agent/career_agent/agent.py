@@ -76,7 +76,11 @@ The resume is a REORGANIZATION of the candidate's real history, not a new one:
   candidate has not done.
 - Keep real numbers exactly as stated. Never inflate or round them up.
 - Include every skill the profile claims that is relevant; add none it doesn't.
-- Drop entries that are irrelevant to this posting rather than padding.
+- Drop entries that are irrelevant to this posting rather than padding. A
+  resume for an AI role has no business carrying an unrelated side project;
+  four relevant entries beat eight assorted ones.
+- The profile may list excluded_projects. Never include those, whatever the
+  posting says.
 - A PUBLIC WORK section may follow the profile, listing the candidate's real
   repositories. Treat it as evidence, not resume copy: you may add a project
   from it when it matches this posting, but describe it ONLY as its

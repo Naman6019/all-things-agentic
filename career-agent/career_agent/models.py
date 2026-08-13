@@ -53,6 +53,10 @@ class CandidateProfile:
     # equivalent field -- there is no lawful automated way to read a profile,
     # so it is imported from the member's own data export instead.
     github_username: str = ""
+    # Projects and repositories to keep off every resume, whatever the posting.
+    # The drafter already selects by relevance and does it well, but "well" is
+    # not "the way you would have": this is the override, not the mechanism.
+    excluded_projects: list[str] = field(default_factory=list)
 
 
 @dataclass
