@@ -90,6 +90,36 @@ label, and:
 The agent never submits anything. It finds, judges, drafts, and hands you the
 link and the documents -- per the guardrail this project is built around.
 
+### Next.js product UI
+
+The separate frontend lives in `frontend/` and is designed for Firebase App
+Hosting. It adds Google and email/password sign-in, a responsive application
+dashboard, evidence and missing-information panels, quick-add, tailored-resume
+access, cover-letter copy, and applied-status tracking.
+
+The first hosted release is intentionally a private beta. Every Next.js route
+handler verifies the Firebase ID token and checks `AUTHORIZED_EMAILS` before it
+can call the private Cloud Run service. The browser never receives Cloud Run
+credentials, and Cloud Run remains protected by IAM.
+
+```bash
+cd frontend
+copy .env.example .env.local
+npm install
+npm run dev
+```
+
+Required App Hosting runtime configuration:
+
+- `CAREER_AGENT_API_URL`: the private Cloud Run service URL.
+- `AUTHORIZED_EMAILS`: comma-separated beta users; keep this out of Git.
+- `CAREER_AGENT_RUN_TOKEN`: only required if the backend enables the optional
+  second gate for spending endpoints.
+
+App Hosting injects the registered Firebase Web App configuration in hosted
+builds. Local development reads the public web configuration from
+`NEXT_PUBLIC_FIREBASE_CONFIG` in `.env.local`.
+
 **Quick-add** -- for anything the feeds miss. Use the "Add a posting you
 found yourself" box on the review page, or:
 ```bash

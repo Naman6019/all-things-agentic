@@ -165,6 +165,11 @@ class QuickAddRequest(BaseModel):
     company: str = ""
 
 
+class ApplicationStatusRequest(BaseModel):
+    job_id: str
+    status: str
+
+
 async def _queue_quick_add(url: str, text: str, title: str, company: str) -> str:
     async with job_tools._client() as client:
         job = await quickadd.build(url=url, text=text, title=title, company=company, client=client)
@@ -185,6 +190,15 @@ async def api_quick_add(payload: QuickAddRequest):
     except quickadd.QuickAddError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     return {"queued": job_id, "note": "Evaluated on the next POST /run."}
+
+
+@app.post("/api/applications/status")
+def api_application_status(payload: ApplicationStatusRequest):
+    """Updates the human-owned application status for the separate web UI."""
+    if payload.status not in ("applied", "drafted"):
+        raise HTTPException(status_code=400, detail="status must be 'applied' or 'drafted'.")
+    firestore_store.set_application_status(payload.job_id, payload.status)
+    return {"job_id": payload.job_id, "status": payload.status}
 
 
 @app.post("/quick-add")

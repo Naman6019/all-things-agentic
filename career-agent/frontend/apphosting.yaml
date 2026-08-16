@@ -1,0 +1,12 @@
+runConfig:
+  minInstances: 0
+  maxInstances: 3
+  concurrency: 40
+  cpu: 1
+  memoryMiB: 512
+
+env:
+  - variable: CAREER_AGENT_API_URL
+    value: https://career-agent-iqf6u4g5bq-uc.a.run.app
+    availability:
+      - RUNTIME
