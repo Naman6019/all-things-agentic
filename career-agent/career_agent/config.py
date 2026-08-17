@@ -100,7 +100,7 @@ def cost_usd(model: str, input_tokens: int, output_tokens: int) -> float:
     price_in, price_out = price_for(model)
     return input_tokens / 1_000_000 * price_in + output_tokens / 1_000_000 * price_out
 
-# --- Job sources: mid/large-company career portals ---------------------------
+# --- Job sources: company career portals -------------------------------------
 # Free, public, per-company ATS board APIs -- no scraping, no key needed.
 # Find a company's slug from its careers page URL, e.g.
 # boards.greenhouse.io/<slug> or jobs.lever.co/<slug>.
@@ -116,6 +116,50 @@ ASHBY_BOARD_SLUGS = _slugs("ASHBY_BOARD_SLUGS")
 # SmartRecruiters covers a lot of mid/large non-tech-native employers. Slug
 # comes from jobs.smartrecruiters.com/<slug>.
 SMARTRECRUITERS_COMPANY_SLUGS = _slugs("SMARTRECRUITERS_COMPANY_SLUGS")
+
+
+def _company_portals(raw: str) -> list[dict[str, str]]:
+    """Validate opt-in public company portal configuration at startup."""
+    if not raw.strip():
+        return []
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError("COMPANY_CAREER_PORTALS_JSON must be valid JSON.") from exc
+    if not isinstance(payload, list):
+        raise ValueError("COMPANY_CAREER_PORTALS_JSON must be a JSON array.")
+
+    allowed = {"workable", "workday", "oracle", "successfactors", "icims", "taleo", "feed"}
+    portals: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in payload:
+        if not isinstance(item, dict):
+            raise ValueError("Each company portal must be a JSON object.")
+        provider = str(item.get("provider") or "").strip().lower()
+        company = str(item.get("company") or "").strip()
+        url = str(item.get("url") or "").strip()
+        careers_url = str(item.get("careers_url") or "").strip()
+        slug = str(item.get("slug") or "").strip()
+        if provider not in allowed or not company:
+            raise ValueError("Each company portal needs a supported provider and company.")
+        if provider == "workable" and not slug:
+            raise ValueError("Workable company portals require a slug.")
+        if provider != "workable" and not url:
+            raise ValueError(f"{provider} company portals require a public URL.")
+        if not slug:
+            slug = hashlib.sha256(f"{provider}:{company}:{url}".encode()).hexdigest()[:12]
+        key = (provider, slug.casefold())
+        if key in seen:
+            continue
+        seen.add(key)
+        portals.append(
+            {"provider": provider, "company": company, "slug": slug, "url": url, "careers_url": careers_url}
+        )
+    return portals
+
+
+COMPANY_CAREER_PORTALS = _company_portals(os.environ.get("COMPANY_CAREER_PORTALS_JSON", ""))
+COMPANY_PORTAL_MAX_DETAIL_PAGES = max(1, min(int(os.environ.get("COMPANY_PORTAL_MAX_DETAIL_PAGES", "25")), 100))
 
 # --- Popular job sites, covered via aggregator feeds (not scraping) ----------
 # See hackathon-project-plan.md for why LinkedIn/Indeed aren't scraped directly.
@@ -170,12 +214,31 @@ PROFILE_SOURCE_MAX_AGE_HOURS = int(os.environ.get("PROFILE_SOURCE_MAX_AGE_HOURS"
 # --- Contact finding -----------------------------------------------------------
 HUNTER_API_KEY = os.environ.get("HUNTER_API_KEY", "")  # optional fallback; see tools/job_tools.find_hiring_contact
 
+# --- Langfuse Observability & Tracing ------------------------------------------
+# Production-grade LLM observability, trace evaluation, latency & cost tracking.
+# When keys are unset, telemetry operates in a transparent zero-overhead no-op mode.
+LANGFUSE_PUBLIC_KEY = os.environ.get("LANGFUSE_PUBLIC_KEY", "")
+LANGFUSE_SECRET_KEY = os.environ.get("LANGFUSE_SECRET_KEY", "")
+LANGFUSE_HOST = os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com")
+ENABLE_LANGFUSE = _enabled("ENABLE_LANGFUSE", "true") and bool(LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY)
+
+# --- LangGraph Orchestration ----------------------------------------------------
+# State-machine orchestration with checkpointing and explicit node routing.
+USE_LANGGRAPH_PIPELINE = _enabled("USE_LANGGRAPH_PIPELINE", "true")
+
 # --- Notifications ------------------------------------------------------------
 DIGEST_TO_EMAIL = os.environ.get("DIGEST_TO_EMAIL", "")
 GMAIL_SENDER = os.environ.get("GMAIL_SENDER", "")
 
 # --- Firestore ------------------------------------------------------------------
 FIRESTORE_PROJECT = os.environ.get("FIRESTORE_PROJECT", GOOGLE_CLOUD_PROJECT)
+
+# --- Board Scout ---------------------------------------------------------------
+# One bounded Google Search-grounded call proposes public ATS boards. Every
+# proposal is then checked against the ATS API before it can enter the registry.
+BOARD_SCOUT_MODEL = os.environ.get("BOARD_SCOUT_MODEL", "gemini-3.5-flash")
+BOARD_SCOUT_MAX_CANDIDATES = int(os.environ.get("BOARD_SCOUT_MAX_CANDIDATES", "6"))
+BOARD_REGISTRY_MAX_ACTIVE = int(os.environ.get("BOARD_REGISTRY_MAX_ACTIVE", "24"))
 
 PROFILE_PATH = Path(os.environ.get("PROFILE_PATH", "profile.json"))
 

@@ -1,6 +1,6 @@
 # Career Agent -- Job Search Pipeline (Taskmaster track)
 
-Autonomous agent that fetches new job listings from mid/large-company career
+Autonomous agent that fetches new job listings from company career
 portals and popular job sites, checks each one against your hard
 requirements, tells you exactly which requirement a non-match failed, and
 drafts a tailored resume + cover letter for the ones that match -- then
@@ -36,7 +36,7 @@ project/track and lives elsewhere.
    - Leave `GOOGLE_CLOUD_LOCATION=global` -- the Gemini 3.x models are only
      served on Vertex's global endpoint and 404 on regional ones
    - `GREENHOUSE_BOARD_SLUGS` / `LEVER_BOARD_SLUGS`: comma-separated slugs
-     for the mid/large companies you're targeting (find a slug from the
+     for companies you're targeting (find a slug from the
      company's careers page URL -- `boards.greenhouse.io/<slug>` or
      `jobs.lever.co/<slug>`)
    - `DIGEST_TO_EMAIL` and `SMTP_USER`/`SMTP_PASSWORD` (a Gmail app password
@@ -61,6 +61,23 @@ adk web .
 uvicorn main:app --reload
 curl -X POST http://localhost:8080/run
 ```
+
+**Board Scout** -- one explicit Google Search-grounded call proposes public
+employer career sources. It covers Greenhouse, Lever, Ashby, SmartRecruiters,
+Workable, public Workday CXS career endpoints, and employer-published feeds or
+structured job pages. Deterministic code rejects unsafe URLs and validates that
+each source currently returns at least one posting before saving it to
+`job_board_registry`. Normal job runs automatically merge that registry with
+configured sources:
+
+```bash
+curl -X POST 'http://localhost:8080/discover-boards?max_candidates=6'
+# Bounded check of newly discovered boards only:
+curl -X POST 'http://localhost:8080/run?registry_only=true&max_jobs=3'
+```
+
+Run discovery weekly or manually, not before every job run. The daily job
+agent reuses the cached registry without another search call.
 
 **Review UI** -- open <http://localhost:8080/> after a run. Server-rendered
 from Firestore, no build step and no external assets, so it deploys with the
@@ -90,12 +107,28 @@ label, and:
 The agent never submits anything. It finds, judges, drafts, and hands you the
 link and the documents -- per the guardrail this project is built around.
 
+Location matching is India/remote-first. Onsite roles outside India reach the
+evaluator only when the posting explicitly offers visa sponsorship and is
+junior/entry-level or asks for at most two years of experience. A remote label
+is not treated as worldwide: the evaluator verifies that working from India is
+actually allowed. Capped batches rotate across Board Scout discoveries, broad
+feeds, and configured company boards so famous employers cannot monopolize a
+run.
+
 ### Next.js product UI
 
 The separate frontend lives in `frontend/` and is designed for Firebase App
 Hosting. It adds Google and email/password sign-in, a responsive application
 dashboard, evidence and missing-information panels, quick-add, tailored-resume
-access, cover-letter copy, and applied-status tracking.
+and cover-letter editors, and applied-status tracking.
+
+Each material opens in a separate review window. The cover letter uses a
+focused text editor; the resume keeps headline, summary, skills, experience,
+projects, and education as structured fields. Human revisions are stored in
+separate `edited_*` fields on the posting, so the generated draft is never
+overwritten. Users can restore the generated version, copy the current cover
+letter, or print the current resume to PDF. Resume export prefers the edited
+version when one exists.
 
 The first hosted release is intentionally a private beta. Every Next.js route
 handler verifies the Firebase ID token and checks `AUTHORIZED_EMAILS` before it
@@ -276,14 +309,27 @@ runs or reading your job search. If you ever make the service public, set
 
 ## What's simplified for the hackathon MVP (and the honest list of caveats)
 
-- **Sources implemented:** Greenhouse, Lever, Ashby and SmartRecruiters for
-  company boards; Arbeitnow, Remotive, RemoteOK and Jobicy as aggregator
-  feeds. All are free, public and keyless. Two notes:
+- **Sources implemented:** Greenhouse, Lever, Ashby, SmartRecruiters and
+  Workable for startup-through-MNC employer boards; explicitly configured
+  public Workday CXS career endpoints; employer-published RSS/Atom, sitemap,
+  JSON feed and schema.org `JobPosting` sources used by Oracle Recruiting,
+  SAP SuccessFactors, iCIMS, Taleo and custom career sites; plus Arbeitnow,
+  Remotive, RemoteOK and Jobicy aggregator feeds. Board Scout validates every
+  discovery before the job agent consumes it. No source connector logs in,
+  impersonates a recruiter, solves CAPTCHAs, or calls internal/recruiter APIs.
+  The grounded discovery call is a Vertex model/search request. Notes:
   - SmartRecruiters slugs are **case-sensitive** (`BoschGroup` returns 4766
     postings, `bosch` returns 0), and its list endpoint carries no
     description, so each one costs a second request. Those are fetched lazily
     for only the jobs that survive the pre-filter and the per-run cap.
   - The SmartRecruiters list is one page of 100; pagination isn't implemented.
+  - Workday CXS is the employer's external career-site interface rather than a
+    contracted Workday integration. It is opt-in and may change by tenant.
+    Oracle/SAP/iCIMS/Taleo are ingested only through data the employer itself
+    publishes publicly; their internal recruiting APIs are not used.
+  - Sitemap and Workday detail reads are bounded by
+    `COMPANY_PORTAL_MAX_DETAIL_PAGES` (25 by default). Source-level failures
+    are retained in each run's `source_errors` instead of disappearing.
 - **429s are handled with retries, not a quota increase.** Gemini on Vertex
   runs on [dynamic shared
   quota](https://cloud.google.com/vertex-ai/generative-ai/docs/resources/dynamic-shared-quota):
@@ -383,15 +429,18 @@ falls back to the flash rate and is flagged in the run summary and the UI.
 - **The profile lives in a local `profile.json`, not Firestore.** Simpler to
   hand-edit for now; move it into a Firestore doc later if you want to edit
   it from a UI instead of a file (see the docstring in `config.py`).
-- **Jobs are capped per run (`MAX_JOBS_PER_RUN`, default 5) and there is no
-  relevance pre-filter yet.** The cap is mandatory -- one Greenhouse board can
+- **Jobs are capped per run (`MAX_JOBS_PER_RUN`, default 5).** The cap is
+  mandatory -- one Greenhouse board can
   return 500+ postings and the Arbeitnow feed ~175 (~1.8M characters) per page.
   Jobs are screened before the cap on two deterministic checks, so the budget
   goes to plausible roles: the title must match one of `target_titles`, and it
   must not contain a phrase from `EXCLUDE_TITLE_KEYWORDS` (staff, principal,
   director, senior...). On a 2575-posting sweep that leaves 271 -- 2059
-  dropped on title, 245 on seniority. Both counts are reported in the digest
-  and the UI, since a pre-filtered job never gets an individual reason.
+  dropped on title, 245 on seniority. Relevant jobs are then selected
+  round-robin across sources, so one high-volume company board cannot consume
+  the entire run. Both filtering counts and selected source counts are
+  reported in the digest and the UI, since a pre-filtered job never gets an
+  individual reason.
   Note that `senior` is in the default list, which drops "Senior Engineer"
   roles asking only 3 years; remove it if you want those back.
 - **Skipped jobs are re-evaluated when the evaluator changes.** Each

@@ -19,6 +19,7 @@ tests/
 pytest.ini
 requirements-dev.txt
 benchmark_evaluators.py
+frontend/
 
 *.md
 !README.md

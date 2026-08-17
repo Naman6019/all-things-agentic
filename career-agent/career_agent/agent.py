@@ -45,6 +45,27 @@ Set match=true when nothing is UNMET. A job with several NOT STATED
 requirements and no UNMET ones is a match. Never reject a job for being silent,
 and never invent a requirement the posting does not contain.
 
+Also grade match_strength using the actual evidence:
+- strong: the candidate directly demonstrates most important stated requirements.
+- medium: nothing rules the candidate out, but important evidence is incomplete.
+- weak: fit is marginal or at least one stated requirement is unmet.
+Match strength explains confidence; it never overrides the match rule above.
+
+LOCATION AND APPLICATION REALISM POLICY:
+- Use location_preferences from the profile. Each entry declares a location
+  and whether the candidate wants onsite, remote, or both kinds of work there.
+- A posting marked remote is not automatically worldwide. "Worldwide" matches
+  only genuinely worldwide/global remote work, not a role limited to the US,
+  EU, UK, or another region.
+- When needs_visa_sponsorship is true, onsite work outside India is eligible
+  only when the posting explicitly offers sponsorship AND the role is junior
+  or asks for at most two years of experience. Silence does not satisfy this.
+- Do not reject or accept based on employer prestige. Judge application realism
+  from the role's stated scope. Responsibilities that clearly require senior
+  ownership, organization-wide architecture, or an established research track
+  record rule out a candidate with under one year of professional experience,
+  even when the posting omits a numeric years requirement.
+
 Salary: the profile's min_salary is in min_salary_currency, which is usually
 not the currency the posting quotes. Convert before comparing, say so in your
 reasoning, and treat it as NOT STATED when the posting gives no figure.

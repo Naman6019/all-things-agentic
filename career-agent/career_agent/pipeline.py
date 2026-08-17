@@ -20,7 +20,7 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
-from . import agent, config
+from . import agent, config, graph, telemetry
 from .models import JobEvaluation, JobListing, TailoredMaterials
 from .schemas import DraftedMaterials, JobVerdict
 from .sources import profile_sources
@@ -128,11 +128,18 @@ def _job_block(job: JobListing) -> str:
     )
 
 
-async def run_once(run_id: str) -> dict:
+async def run_once(run_id: str, max_jobs: int | None = None, registry_only: bool = False) -> dict:
     """Runs one full pass and returns what it did, including token usage."""
+    if config.USE_LANGGRAPH_PIPELINE:
+        return await graph.run_langgraph_pipeline(
+            run_id=run_id, max_jobs=max_jobs, registry_only=registry_only
+        )
+
     usage: dict[str, dict[str, int]] = {}
     evaluator = config.evaluator_fingerprint()
-    jobs = await job_tools.collect_new_jobs(run_id, evaluator=evaluator)
+    jobs = await job_tools.collect_new_jobs(
+        run_id, evaluator=evaluator, max_jobs=max_jobs, registry_only=registry_only
+    )
 
     profile_block = _profile_block()
 
@@ -164,6 +171,7 @@ async def run_once(run_id: str) -> dict:
                 unmet_requirements=verdict.unmet_requirements,
                 missing_information=verdict.missing_information,
                 reasoning=verdict.reasoning,
+                match_strength=verdict.match_strength,
             ),
         )
         # Claimed only now that a verdict is durably stored. The evaluator

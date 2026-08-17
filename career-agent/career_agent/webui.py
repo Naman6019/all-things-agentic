@@ -13,6 +13,7 @@ from __future__ import annotations
 from html import escape
 from urllib.parse import quote
 
+from . import review_groups
 from .storage import firestore_store
 
 _STYLE = """
@@ -129,6 +130,25 @@ def _chips(app: dict) -> str:
     return "".join(f'<span class="chip">{escape(str(b))}</span>' for b in bits)
 
 
+def _posting_links(app: dict) -> str:
+    postings = app.get("postings") or []
+    if len(postings) <= 1:
+        return ""
+    rows = []
+    for posting in postings:
+        label = posting.get("location") or "Location not listed"
+        source = posting.get("source")
+        if source:
+            label += f" · {source}"
+        url = posting.get("url") or ""
+        target = (
+            f'<a class="jd" href="{escape(str(url))}" target="_blank" rel="noopener">Open posting &rarr;</a>'
+            if url else '<span class="chip">no posting link</span>'
+        )
+        rows.append(f'<div class="actions"><span>{escape(str(label))}</span>{target}</div>')
+    return '<details open><summary>All posting locations</summary>' + "".join(rows) + "</details>"
+
+
 def _list(items: list, css: str) -> str:
     return "".join(f'<li class="{css}">{escape(str(i))}</li>' for i in items)
 
@@ -151,6 +171,8 @@ def _card(app: dict) -> str:
 
     if app.get("reasoning"):
         parts.append(f'<div class="why">{escape(str(app["reasoning"]))}</div>')
+
+    parts.append(_posting_links(app))
 
     if app.get("unmet_requirements"):
         parts.append('<div class="lab">Requirements you do not meet</div>')
@@ -290,7 +312,7 @@ def _flash(queued: bool, error: str) -> str:
 def render(status: str = "matched", queued: bool = False, error: str = "") -> str:
     """Renders the review page for one status tab."""
     active = next((t for t in _STATUS_TABS if t[0] == status), _STATUS_TABS[0])
-    apps = firestore_store.get_applications_by_status(active[2])
+    apps = review_groups.group_applications(firestore_store.get_applications_by_status(active[2]))
     summary = firestore_store.get_latest_run_summary()
 
     tabs = "".join(

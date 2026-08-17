@@ -7,6 +7,8 @@ these arguments" with a response that either parses or fails loudly.
 """
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -17,6 +19,14 @@ class JobVerdict(BaseModel):
         description=(
             "True if nothing the posting actually STATES rules the candidate out. "
             "A requirement the posting is silent about must not make this False."
+        )
+    )
+    match_strength: Literal["strong", "medium", "weak"] = Field(
+        description=(
+            "Strength of fit based on stated requirements and demonstrated candidate evidence. "
+            "Use strong for direct evidence across most important requirements, medium when the "
+            "candidate qualifies but important evidence is incomplete, and weak when fit is "
+            "marginal or the job has an unmet requirement."
         )
     )
     unmet_requirements: list[str] = Field(

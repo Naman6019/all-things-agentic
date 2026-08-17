@@ -57,6 +57,10 @@ class CandidateProfile:
     # The drafter already selects by relevance and does it well, but "well" is
     # not "the way you would have": this is the override, not the mechanism.
     excluded_projects: list[str] = field(default_factory=list)
+    # Structured search scope used by the dashboard settings page. Kept in
+    # addition to allowed_locations so older profile files still load.
+    # Each item is {"location": str, "work_mode": "onsite"|"remote"|"both"}.
+    location_preferences: list[dict[str, str]] = field(default_factory=list)
 
 
 @dataclass
@@ -67,6 +71,7 @@ class JobEvaluation:
     match: bool
     unmet_requirements: list[str]
     reasoning: str
+    match_strength: str = "unscored"
     # Requirements the posting simply never states (salary, sponsorship, years).
     # Kept separate from unmet_requirements on purpose: "the posting doesn't say"
     # is not the same claim as "the posting rules you out", and collapsing the

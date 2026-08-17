@@ -20,6 +20,9 @@ Collections:
   runs/{run_id}
       What one run fetched, filtered, evaluated and spent.
 
+  job_board_registry/{provider}:{slug}
+      Shared public ATS boards discovered and API-validated by Board Scout.
+
 Document ids are prefixed with the user rather than merely carrying a user_id
 field: the prefix is what actually prevents two users colliding on the same
 posting. The `__` separator is deliberate -- job ids already contain `:`
@@ -212,6 +215,7 @@ def save_job_listing(job: JobListing) -> None:
             "remote": job.remote,
             "url": job.url,
             "source": job.source,
+            "posted_at": job.posted_at,
         },
         merge=True,
     )
@@ -232,6 +236,7 @@ def save_evaluation(run_id: str, evaluation: JobEvaluation) -> None:
             "unmet_requirements": evaluation.unmet_requirements,
             "missing_information": evaluation.missing_information,
             "reasoning": evaluation.reasoning,
+            "match_strength": evaluation.match_strength,
             "evaluated_at": evaluation.evaluated_at,
             "status": "matched" if evaluation.match else "skipped",
         },
@@ -288,6 +293,48 @@ def save_profile_source(name: str, payload: dict) -> None:
     )
 
 
+def get_active_board_registry(limit: int | None = None) -> list[dict]:
+    """Return API-validated shared boards, newest validation first."""
+    boards = [
+        doc.to_dict() or {}
+        for doc in get_client().collection("job_board_registry").stream()
+        if (doc.to_dict() or {}).get("active", False)
+    ]
+    boards.sort(key=lambda board: board.get("validated_at", ""), reverse=True)
+    return boards[: limit or config.BOARD_REGISTRY_MAX_ACTIVE]
+
+
+def get_active_board_ids() -> list[str]:
+    return [f"{board.get('provider', '')}:{board.get('slug', '')}".lower() for board in get_active_board_registry()]
+
+
+def upsert_board_registry(board: dict, run_id: str) -> None:
+    """Store a board only after Board Scout has validated its public API."""
+    provider = str(board["provider"]).lower()
+    slug = str(board["slug"])
+    get_client().collection("job_board_registry").document(f"{provider}:{slug.lower()}").set(
+        {
+            "provider": provider,
+            "slug": slug,
+            "company": board.get("company") or slug,
+            "careers_url": board.get("careers_url") or "",
+            "active": True,
+            "job_count_at_validation": int(board.get("job_count") or 0),
+            "validated_at": datetime.now(timezone.utc).isoformat(),
+            "discovery_run_id": run_id,
+        },
+        merge=True,
+    )
+
+
+def save_board_discovery_run(run_id: str, result: dict) -> None:
+    get_client().collection("board_discovery_runs").document(run_id).set(result)
+
+
+def get_board_discovery_run(run_id: str) -> dict:
+    return (get_client().collection("board_discovery_runs").document(run_id).get().to_dict()) or {}
+
+
 def get_profile_source(name: str, max_age_hours: int) -> dict | None:
     """Returns cached enrichment if it is fresh enough, else None.
 
@@ -328,6 +375,45 @@ def set_application_status(job_id: str, status: str) -> None:
             **_owner_fields(job_id),
             "status": status,
             "status_changed_at": datetime.now(timezone.utc).isoformat(),
+        },
+        merge=True,
+    )
+
+
+def archive_application(job_id: str, reason: str) -> None:
+    """Hide an obsolete recommendation without deleting its evidence or drafts."""
+    ref = get_client().collection("applications").document(_scoped(job_id))
+    snapshot = ref.get()
+    if not snapshot.exists:
+        return
+    current = snapshot.to_dict() or {}
+    ref.set(
+        {
+            **_owner_fields(job_id),
+            "previous_status": current.get("status"),
+            "status": "archived",
+            "archived_reason": reason,
+            "archived_at": datetime.now(timezone.utc).isoformat(),
+        },
+        merge=True,
+    )
+
+
+def save_material_edit(job_id: str, material_type: str, value) -> None:
+    """Saves or clears the human-edited draft without changing AI output."""
+    fields = {
+        "cover_letter": ("edited_cover_letter", "cover_letter_edited_at"),
+        "tailored_resume": ("edited_tailored_resume", "tailored_resume_edited_at"),
+    }
+    if material_type not in fields:
+        raise ValueError(f"Unsupported material type: {material_type}")
+
+    value_field, timestamp_field = fields[material_type]
+    get_client().collection("applications").document(_scoped(job_id)).set(
+        {
+            **_owner_fields(job_id),
+            value_field: value,
+            timestamp_field: datetime.now(timezone.utc).isoformat() if value is not None else None,
         },
         merge=True,
     )
