@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   ChevronDown,
   CircleAlert,
-  Clipboard,
   Clock3,
   FileText,
   Inbox,
@@ -17,15 +16,26 @@ import {
   Plus,
   Search,
   Send,
+  Settings,
   ShieldCheck,
   Sparkles,
   UserRound,
   X,
 } from "lucide-react";
+import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import type { Job, JobsResponse, JobStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
+
+type SortOption = "newest" | "position" | "location" | "match";
+
+const matchRank: Record<NonNullable<Job["match_strength"]>, number> = {
+  strong: 0,
+  medium: 1,
+  weak: 2,
+  unscored: 3,
+};
 
 const tabs: { value: JobStatus; label: string; icon: typeof Inbox }[] = [
   { value: "matched", label: "To apply", icon: Inbox },
@@ -52,6 +62,41 @@ function formatDate(value?: string) {
 function sourceName(source?: string) {
   if (!source) return "Employer site";
   return source.charAt(0).toUpperCase() + source.slice(1);
+}
+
+function matchLabel(job: Job) {
+  if (job.status === "skipped") return "Not selected";
+  if (job.status === "applied") return "Applied";
+  if (job.match_strength === "strong") return "Strong match";
+  if (job.match_strength === "medium") return "Medium match";
+  if (job.match_strength === "weak") return "Weak match";
+  return "Match";
+}
+
+function matchBadgeClass(job: Job) {
+  if (job.status === "skipped") return "bg-[#f4eceb] text-[#8b423a]";
+  if (job.status === "applied") return "bg-[#eef3f1] text-[#53635e]";
+  if (job.match_strength === "medium") return "bg-[#f7f1e5] text-[#805f20]";
+  if (job.match_strength === "weak") return "bg-[#f3eeee] text-[#76504b]";
+  return "bg-[#e8f3ef] text-[#0f6b55]";
+}
+
+function jobTimestamp(job: Job) {
+  const value = job.posted_at || job.materials_created_at || job.evaluated_at;
+  const timestamp = value ? new Date(value).getTime() : 0;
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function sortJobs(jobs: Job[], sort: SortOption) {
+  return [...jobs].sort((left, right) => {
+    if (sort === "position") return (left.title || "").localeCompare(right.title || "");
+    if (sort === "location") return (left.location || "Unspecified").localeCompare(right.location || "Unspecified");
+    if (sort === "match") {
+      const strength = (matchRank[left.match_strength || "unscored"] - matchRank[right.match_strength || "unscored"]);
+      return strength || jobTimestamp(right) - jobTimestamp(left);
+    }
+    return jobTimestamp(right) - jobTimestamp(left);
+  });
 }
 
 function DashboardSkeleton() {
@@ -86,27 +131,35 @@ function Metric({ label, value, detail, icon: Icon }: { label: string; value: nu
   );
 }
 
-function JobCard({ job, onApplied, onCopy, onResume, busy }: { job: Job; onApplied: (job: Job) => void; onCopy: (value: string) => void; onResume: (job: Job) => void; busy: boolean }) {
+function JobCard({ job, onApplied, busy }: { job: Job; onApplied: (job: Job) => void; busy: boolean }) {
   const missing = job.missing_information ?? [];
   const unmet = job.unmet_requirements ?? [];
   const isSkipped = job.status === "skipped";
+  const postings = job.postings?.length ? job.postings : [{
+    job_id: job.job_id,
+    location: job.location,
+    remote: job.remote,
+    url: job.url,
+    source: job.source,
+    posted_at: job.posted_at,
+  }];
 
   return (
     <article className="rounded-2xl border border-[#dce4e1] bg-white p-5 shadow-sm sm:p-6">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold", isSkipped ? "bg-[#f4eceb] text-[#8b423a]" : "bg-[#e8f3ef] text-[#0f6b55]")}>
-              {isSkipped ? "Not selected" : job.status === "applied" ? "Applied" : "Strong match"}
+            <span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold", matchBadgeClass(job))}>
+              {matchLabel(job)}
             </span>
-            <span className="text-xs text-[#7a8782]">{formatDate(job.materials_created_at || job.evaluated_at)}</span>
+            <span className="text-xs text-[#7a8782]">{job.posted_at ? `Posted ${formatDate(job.posted_at)}` : formatDate(job.materials_created_at || job.evaluated_at)}</span>
           </div>
           <h3 className="mt-3 text-balance text-xl font-semibold text-[#17211e]">{job.title || "Untitled role"}</h3>
           <p className="mt-1 text-pretty font-medium text-[#53635e]">{job.company || "Company not listed"}</p>
         </div>
-        {job.url && (
+        {postings.length === 1 && postings[0].url && (
           <a
-            href={job.url}
+            href={postings[0].url}
             target="_blank"
             rel="noreferrer"
             className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-[#cfd9d5] bg-white px-4 text-sm font-semibold text-[#25312d] hover:bg-[#f7f9f8]"
@@ -117,10 +170,26 @@ function JobCard({ job, onApplied, onCopy, onResume, busy }: { job: Job; onAppli
       </div>
 
       <div className="mt-5 flex flex-wrap gap-2 text-xs text-[#5e6d67]">
-        {job.location && <span className="inline-flex items-center gap-1.5 rounded-lg bg-[#f2f5f4] px-2.5 py-1.5"><MapPin className="size-3.5" />{job.location}</span>}
-        {job.remote && <span className="rounded-lg bg-[#f2f5f4] px-2.5 py-1.5">Remote</span>}
-        <span className="inline-flex items-center gap-1.5 rounded-lg bg-[#f2f5f4] px-2.5 py-1.5"><Link2 className="size-3.5" />{sourceName(job.source)}</span>
+        {postings.length === 1 && job.location && <span className="inline-flex items-center gap-1.5 rounded-lg bg-[#f2f5f4] px-2.5 py-1.5"><MapPin className="size-3.5" />{job.location}</span>}
+        {postings.length === 1 && job.remote && <span className="rounded-lg bg-[#f2f5f4] px-2.5 py-1.5">Remote</span>}
+        {postings.length === 1 && <span className="inline-flex items-center gap-1.5 rounded-lg bg-[#f2f5f4] px-2.5 py-1.5"><Link2 className="size-3.5" />{sourceName(job.source)}</span>}
+        {postings.length > 1 && <span className="rounded-lg bg-[#e8f3ef] px-2.5 py-1.5 font-semibold text-[#0f6b55]">{postings.length} posting locations</span>}
       </div>
+
+      {postings.length > 1 && (
+        <div className="mt-4 overflow-hidden rounded-xl border border-[#e0e6e4]">
+          {postings.map((posting) => (
+            <div key={posting.job_id} className="flex flex-col justify-between gap-3 border-b border-[#e0e6e4] px-4 py-3 last:border-b-0 sm:flex-row sm:items-center">
+              <div className="flex flex-wrap items-center gap-2 text-sm text-[#53635e]">
+                <span className="inline-flex items-center gap-1.5 font-medium text-[#25312d]"><MapPin className="size-3.5" />{posting.location || "Location not listed"}</span>
+                {posting.remote && <span className="rounded-md bg-[#f2f5f4] px-2 py-1 text-xs">Remote</span>}
+                <span className="text-xs text-[#7a8782]">{sourceName(posting.source)}</span>
+              </div>
+              {posting.url ? <a href={posting.url} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-1.5 text-sm font-semibold text-[#0f6b55] hover:underline">View posting <ArrowUpRight className="size-3.5" /></a> : <span className="text-xs text-[#7a8782]">Link unavailable</span>}
+            </div>
+          ))}
+        </div>
+      )}
 
       {job.reasoning && (
         <div className="mt-5 border-l-2 border-[#77ad9d] pl-4">
@@ -144,14 +213,14 @@ function JobCard({ job, onApplied, onCopy, onResume, busy }: { job: Job; onAppli
       {!isSkipped && (
         <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-[#e6ebe9] pt-5">
           {job.cover_letter && (
-            <button type="button" onClick={() => onCopy(job.cover_letter ?? "")} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#cfd9d5] px-4 text-sm font-semibold text-[#42504b] hover:bg-[#f7f9f8]">
-              <Clipboard className="size-4" /> Copy cover letter
-            </button>
+            <a href={`/materials?job_id=${encodeURIComponent(job.job_id)}&type=cover-letter`} target="_blank" rel="noopener noreferrer" className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#cfd9d5] px-4 text-sm font-semibold text-[#42504b] hover:bg-[#f7f9f8]">
+              <FileText className="size-4" /> Cover letter {job.cover_letter_edited_at && <span className="rounded-full bg-[#e8f3ef] px-2 py-0.5 text-xs text-[#0f6b55]">Edited</span>}
+            </a>
           )}
-          {job.cover_letter && (
-            <button type="button" onClick={() => onResume(job)} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#cfd9d5] px-4 text-sm font-semibold text-[#42504b] hover:bg-[#f7f9f8]">
-              <FileText className="size-4" /> Tailored resume
-            </button>
+          {job.tailored_resume && (
+            <a href={`/materials?job_id=${encodeURIComponent(job.job_id)}&type=resume`} target="_blank" rel="noopener noreferrer" className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#cfd9d5] px-4 text-sm font-semibold text-[#42504b] hover:bg-[#f7f9f8]">
+              <FileText className="size-4" /> Tailored resume {job.tailored_resume_edited_at && <span className="rounded-full bg-[#e8f3ef] px-2 py-0.5 text-xs text-[#0f6b55]">Edited</span>}
+            </a>
           )}
           {job.status !== "applied" && (
             <button disabled={busy} type="button" onClick={() => onApplied(job)} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#0f6b55] px-4 text-sm font-semibold text-white hover:bg-[#0a5947] disabled:opacity-60">
@@ -218,6 +287,7 @@ export function CareerDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<SortOption>("newest");
   const [busyJob, setBusyJob] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -249,11 +319,39 @@ export function CareerDashboard() {
     return () => window.clearTimeout(timer);
   }, [load]);
 
+  useEffect(() => {
+    if (!("BroadcastChannel" in window)) return;
+    const channel = new BroadcastChannel("career-agent-materials");
+    channel.onmessage = (event: MessageEvent<{ jobId?: string; materialType?: string; edited?: boolean; timestamp?: string }>) => {
+      const { jobId, materialType, edited, timestamp } = event.data;
+      if (!jobId || !materialType) return;
+      setDatasets((current) => {
+        const update = (job: Job) => {
+          if (job.job_id !== jobId) return job;
+          return materialType === "cover-letter"
+            ? { ...job, cover_letter_edited_at: edited ? timestamp : undefined }
+            : { ...job, tailored_resume_edited_at: edited ? timestamp : undefined };
+        };
+        return {
+          matched: current.matched.map(update),
+          applied: current.applied.map(update),
+          skipped: current.skipped.map(update),
+        };
+      });
+    };
+    return () => channel.close();
+  }, []);
+
   const visibleJobs = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return datasets[active];
-    return datasets[active].filter((job) => `${job.title} ${job.company} ${job.location}`.toLowerCase().includes(query));
-  }, [active, datasets, search]);
+    const filtered = query
+      ? datasets[active].filter((job) => {
+          const postingLocations = job.postings?.map((posting) => posting.location).join(" ") || "";
+          return `${job.title} ${job.company} ${job.location} ${postingLocations}`.toLowerCase().includes(query);
+        })
+      : datasets[active];
+    return sortJobs(filtered, sort);
+  }, [active, datasets, search, sort]);
 
   async function markApplied(job: Job) {
     setBusyJob(job.job_id); setError("");
@@ -269,26 +367,6 @@ export function CareerDashboard() {
     }
   }
 
-  async function copy(value: string) {
-    await navigator.clipboard.writeText(value);
-    setNotice("Cover letter copied.");
-  }
-
-  async function openResume(job: Job) {
-    setBusyJob(job.job_id); setError("");
-    try {
-      const response = await request(`/api/resume?job_id=${encodeURIComponent(job.job_id)}`);
-      if (!response.ok) throw new Error(await responseError(response));
-      const url = URL.createObjectURL(await response.blob());
-      window.open(url, "_blank", "noopener,noreferrer");
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not open the tailored resume.");
-    } finally {
-      setBusyJob("");
-    }
-  }
-
   const firstName = user?.displayName?.split(" ")[0] || "there";
 
   return (
@@ -296,7 +374,7 @@ export function CareerDashboard() {
       <header className="border-b border-[#dce4e1] bg-white">
         <div className="mx-auto flex h-16 max-w-[1440px] items-center justify-between px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3"><div className="grid size-9 place-items-center rounded-xl bg-[#153b32] text-white"><Search className="size-4" /></div><span className="font-semibold text-[#17211e]">Career Agent</span><span className="hidden rounded-full bg-[#eef3f1] px-2.5 py-1 text-xs font-medium text-[#53635e] sm:inline">Private beta</span></div>
-          <div className="flex items-center gap-2 sm:gap-4"><div className="hidden text-right sm:block"><p className="text-sm font-medium text-[#25312d]">{user?.displayName || user?.email}</p><p className="text-xs text-[#7a8782]">Human reviewer</p></div><div className="grid size-9 place-items-center rounded-full bg-[#e8f3ef] text-[#0f6b55]"><UserRound className="size-4" /></div><button type="button" aria-label="Sign out" onClick={() => void logout()} className="grid size-9 place-items-center rounded-lg text-[#64726d] hover:bg-[#f0f3f2] hover:text-[#25312d]"><LogOut className="size-4" /></button></div>
+          <div className="flex items-center gap-2 sm:gap-4"><Link href="/settings" className="inline-flex h-9 items-center gap-2 rounded-lg px-2.5 text-sm font-semibold text-[#53635e] hover:bg-[#f0f3f2] hover:text-[#25312d]"><Settings className="size-4" /><span className="hidden sm:inline">Search settings</span></Link><div className="hidden text-right sm:block"><p className="text-sm font-medium text-[#25312d]">{user?.displayName || user?.email}</p><p className="text-xs text-[#7a8782]">Human reviewer</p></div><div className="grid size-9 place-items-center rounded-full bg-[#e8f3ef] text-[#0f6b55]"><UserRound className="size-4" /></div><button type="button" aria-label="Sign out" onClick={() => void logout()} className="grid size-9 place-items-center rounded-lg text-[#64726d] hover:bg-[#f0f3f2] hover:text-[#25312d]"><LogOut className="size-4" /></button></div>
         </div>
       </header>
 
@@ -321,19 +399,30 @@ export function CareerDashboard() {
                 <button key={value} type="button" onClick={() => setActive(value)} className={cn("flex h-11 shrink-0 items-center gap-3 rounded-xl px-3 text-sm font-medium lg:w-full", active === value ? "bg-[#153b32] text-white" : "text-[#53635e] hover:bg-white hover:text-[#25312d]")}><Icon className="size-4" /><span>{label}</span><span className={cn("ml-auto tabular-nums", active === value ? "text-[#c5ddd6]" : "text-[#8a9692]")}>{datasets[value].length}</span></button>
               ))}
             </nav>
-            <div className="mt-5 hidden rounded-xl border border-[#dce4e1] bg-white p-4 text-sm lg:block"><div className="flex items-center gap-2 font-semibold text-[#25312d]"><Clock3 className="size-4 text-[#0f6b55]" /> Agent schedule</div><p className="mt-2 text-pretty leading-6 text-[#6a7772]">Sources refresh every 12 hours. New quick-add jobs enter the next run.</p></div>
+            <div className="mt-5 hidden rounded-xl border border-[#dce4e1] bg-white p-4 text-sm lg:block"><div className="flex items-center gap-2 font-semibold text-[#25312d]"><Clock3 className="size-4 text-[#0f6b55]" /> Agent schedule</div><p className="mt-2 text-pretty leading-6 text-[#6a7772]">Sources refresh every 6 hours on weekdays. New quick-add jobs enter the next run.</p></div>
           </aside>
 
           <section>
             <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
               <div><h2 className="text-balance text-xl font-semibold text-[#17211e]">{tabs.find((tab) => tab.value === active)?.label}</h2><p className="mt-1 text-sm text-[#7a8782]">{visibleJobs.length} {visibleJobs.length === 1 ? "role" : "roles"}</p></div>
-              <label className="relative block sm:w-72"><span className="sr-only">Search jobs</span><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#81908a]" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search title or company" className="h-11 w-full rounded-xl border border-[#cfd9d5] bg-white pl-10 pr-4 text-sm shadow-sm" /></label>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <label className="relative block sm:w-72"><span className="sr-only">Search jobs</span><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#81908a]" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search title or company" className="h-11 w-full rounded-xl border border-[#cfd9d5] bg-white pl-10 pr-4 text-sm shadow-sm" /></label>
+                <label>
+                  <span className="sr-only">Sort jobs</span>
+                  <select value={sort} onChange={(event) => setSort(event.target.value as SortOption)} className="h-11 w-full rounded-xl border border-[#cfd9d5] bg-white px-3 text-sm font-medium text-[#42504b] shadow-sm sm:w-48">
+                    <option value="newest">Newest posting</option>
+                    <option value="position">Position A–Z</option>
+                    <option value="location">Location A–Z</option>
+                    <option value="match">Strongest match</option>
+                  </select>
+                </label>
+              </div>
             </div>
 
             {error && <div role="alert" className="mb-5 rounded-xl border border-[#efc7c2] bg-[#fff5f3] p-4 text-sm text-[#8d362d]"><div className="flex items-start gap-3"><CircleAlert className="mt-0.5 size-4 shrink-0" /><div><p className="font-semibold">Could not load the workspace</p><p className="mt-1 text-pretty">{error}</p><button type="button" onClick={() => void load()} className="mt-3 font-semibold underline">Try again</button></div></div></div>}
 
             {loading ? <DashboardSkeleton /> : visibleJobs.length ? (
-              <div className="space-y-4">{visibleJobs.map((job) => <JobCard key={job.job_id} job={job} onApplied={markApplied} onCopy={(value) => void copy(value)} onResume={(value) => void openResume(value)} busy={busyJob === job.job_id} />)}</div>
+              <div className="space-y-4">{visibleJobs.map((job) => <JobCard key={job.group_key || job.job_id} job={job} onApplied={markApplied} busy={busyJob === job.job_id} />)}</div>
             ) : (
               <div className="rounded-2xl border border-dashed border-[#c9d4d0] bg-white px-6 py-16 text-center"><div className="mx-auto grid size-12 place-items-center rounded-2xl bg-[#e8f3ef] text-[#0f6b55]"><BriefcaseBusiness className="size-5" /></div><h3 className="mt-4 text-balance text-lg font-semibold text-[#25312d]">{search ? "No roles match your search" : active === "matched" ? "You’re caught up" : `No ${active} roles yet`}</h3><p className="mx-auto mt-2 max-w-sm text-pretty text-sm leading-6 text-[#6a7772]">{search ? "Try a company name, role title, or location." : active === "matched" ? "Add a job you found or check back after the next scheduled run." : "Roles will appear here when their status changes."}</p>{search && <button type="button" onClick={() => setSearch("")} className="mt-4 text-sm font-semibold text-[#0f6b55]">Clear search</button>}</div>
             )}

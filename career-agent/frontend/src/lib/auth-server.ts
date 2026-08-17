@@ -19,7 +19,13 @@ export async function requireAuthorizedUser(request: NextRequest) {
   let user;
   try {
     user = await adminAuth.verifyIdToken(header.slice(7), true);
-  } catch {
+  } catch (error) {
+    const code =
+      typeof error === "object" && error !== null && "code" in error
+        ? String(error.code)
+        : "unknown";
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("Firebase token verification failed:", code, message);
     throw new AuthError("Your session is invalid or expired.", 401);
   }
 
