@@ -18,13 +18,18 @@ from __future__ import annotations
 
 import hmac
 import uuid
+from dataclasses import asdict
+from typing import Literal
 from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, Form, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
-from career_agent import config, pipeline, profile_ui, quickadd, resume_render, webui
+from career_agent import (
+    board_scout, config, freelance_graph, matching, pipeline, profile_ui, quickadd, resume_render, review_groups, webui,
+)
+from career_agent.schemas import TailoredResume
 from career_agent.storage import firestore_store
 from career_agent.tools import job_tools
 
@@ -110,7 +115,19 @@ async def save_profile(request: Request):
             status_code=303,
         )
 
-    firestore_store.save_profile(data)
+    # Preserve fields this legacy HTML form does not know about. The file is
+    # the seed when nothing has been saved yet, so a first save here does not
+    # drop everything the form has no input for.
+    existing = firestore_store.get_profile() or asdict(config.load_candidate_profile())
+    # allowed_locations is the only location field this form has, and the
+    # structured preferences outrank it when the agent reads the profile.
+    # Rebuilding them keeps an edit here from appearing to work and changing
+    # nothing; the work mode saved per location on the settings page survives.
+    data["location_preferences"] = matching.preferences_from_allowed_locations(
+        data.get("allowed_locations") or [],
+        existing.get("location_preferences") or [],
+    )
+    firestore_store.save_profile({**existing, **data})
     config.invalidate_profile_cache()
     return RedirectResponse("/profile?saved=1", status_code=303)
 
@@ -126,7 +143,11 @@ def tailored_resume(job_id: str):
     app_doc = firestore_store.get_application(job_id)
     if not app_doc:
         raise HTTPException(status_code=404, detail="No application for that job_id.")
-    resume = app_doc.get("tailored_resume")
+    resume = (
+        app_doc.get("edited_tailored_resume")
+        if app_doc.get("edited_tailored_resume") is not None
+        else app_doc.get("tailored_resume")
+    )
     if not resume:
         raise HTTPException(
             status_code=404,
@@ -142,12 +163,29 @@ def tailored_resume(job_id: str):
     )
 
 
+def _set_status_across_group(job_id: str, status: str) -> list[str]:
+    """Applies a status to every posting on the same grouped review card.
+
+    Both review surfaces render one card per (company, title) but send the id
+    of a single underlying application. Resolving the rest here, rather than
+    asking each UI to enumerate them, is what keeps a click from leaving the
+    duplicate postings behind in the previous tab.
+    """
+    # Skipped applications are deliberately excluded: they live in their own
+    # tab and were never part of the card the human acted on.
+    visible = firestore_store.get_applications_by_status(["matched", "drafted", "applied"])
+    job_ids = review_groups.group_member_ids(visible, job_id)
+    for member_id in job_ids:
+        firestore_store.set_application_status(member_id, status)
+    return job_ids
+
+
 @app.post("/applications/status")
 def set_status(job_id: str = Form(...), status: str = Form(...)):
     """Marks a job applied (or back to drafted); redirects to the review page."""
     if status not in ("applied", "drafted"):
         raise HTTPException(status_code=400, detail="status must be 'applied' or 'drafted'.")
-    firestore_store.set_application_status(job_id, status)
+    _set_status_across_group(job_id, status)
     return RedirectResponse(f"/?status={'applied' if status == 'applied' else 'matched'}", status_code=303)
 
 
@@ -155,7 +193,8 @@ def set_status(job_id: str = Form(...), status: str = Form(...)):
 def api_jobs(status: str = "matched"):
     """The same data as JSON, for anything that wants to consume it directly."""
     statuses = ["matched", "drafted"] if status == "matched" else [status]
-    return {"status": status, "jobs": firestore_store.get_applications_by_status(statuses)}
+    applications = firestore_store.get_applications_by_status(statuses)
+    return {"status": status, "jobs": review_groups.group_applications(applications)}
 
 
 class QuickAddRequest(BaseModel):
@@ -163,6 +202,86 @@ class QuickAddRequest(BaseModel):
     text: str = ""
     title: str = ""
     company: str = ""
+
+
+class ApplicationStatusRequest(BaseModel):
+    job_id: str
+    status: str
+
+
+class MaterialEditRequest(BaseModel):
+    job_id: str
+    material_type: Literal["cover_letter", "tailored_resume"]
+    cover_letter: str | None = None
+    tailored_resume: TailoredResume | None = None
+    reset: bool = False
+
+
+class LocationPreferenceRequest(BaseModel):
+    location: str
+    work_mode: Literal["onsite", "remote", "both"]
+
+
+class SearchPreferencesRequest(BaseModel):
+    target_titles: list[str]
+    location_preferences: list[LocationPreferenceRequest]
+    needs_visa_sponsorship: bool
+
+
+@app.get("/api/profile")
+def api_profile():
+    """Return the search preferences for the current saved beta profile."""
+    profile = config.load_candidate_profile()
+    return {
+        "target_titles": profile.target_titles,
+        "location_preferences": matching.normalized_location_preferences(profile),
+        "needs_visa_sponsorship": profile.needs_visa_sponsorship,
+    }
+
+
+@app.put("/api/profile")
+def api_save_profile(payload: SearchPreferencesRequest):
+    """Update search scope without overwriting resume or drafting fields."""
+    titles = list(dict.fromkeys(title.strip() for title in payload.target_titles if title.strip()))
+    if not titles:
+        raise HTTPException(status_code=400, detail="Add at least one target position.")
+    if len(titles) > 15:
+        raise HTTPException(status_code=400, detail="You can save up to 15 target positions.")
+    if not payload.location_preferences:
+        raise HTTPException(status_code=400, detail="Add at least one location preference.")
+    if len(payload.location_preferences) > matching.MAX_LOCATION_PREFERENCES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"You can save up to {matching.MAX_LOCATION_PREFERENCES} location preferences.",
+        )
+    if any(not item.location.strip() for item in payload.location_preferences):
+        raise HTTPException(status_code=400, detail="Location names cannot be empty.")
+
+    # Same normalizer the agent reads through, so what is stored is what the
+    # pre-filter will actually apply.
+    locations = matching.validated_location_preferences(
+        [{"location": item.location, "work_mode": item.work_mode} for item in payload.location_preferences]
+    )
+
+    profile = config.load_candidate_profile()
+    existing = firestore_store.get_profile() or asdict(profile)
+    updated = {
+        **existing,
+        "target_titles": titles,
+        "location_preferences": locations,
+        "allowed_locations": [item["location"] for item in locations],
+        "remote_only": all(item["work_mode"] == "remote" for item in locations),
+        "needs_visa_sponsorship": payload.needs_visa_sponsorship,
+    }
+    # Validate the merged document before making it authoritative.
+    config._profile_from_dict(updated)
+    firestore_store.save_profile(updated)
+    config.invalidate_profile_cache()
+    return {
+        "target_titles": titles,
+        "location_preferences": locations,
+        "needs_visa_sponsorship": payload.needs_visa_sponsorship,
+    }
 
 
 async def _queue_quick_add(url: str, text: str, title: str, company: str) -> str:
@@ -187,6 +306,69 @@ async def api_quick_add(payload: QuickAddRequest):
     return {"queued": job_id, "note": "Evaluated on the next POST /run."}
 
 
+@app.post("/api/applications/status")
+def api_application_status(payload: ApplicationStatusRequest):
+    """Updates the human-owned application status for the separate web UI."""
+    if payload.status not in ("applied", "drafted"):
+        raise HTTPException(status_code=400, detail="status must be 'applied' or 'drafted'.")
+    job_ids = _set_status_across_group(payload.job_id, payload.status)
+    return {"job_id": payload.job_id, "job_ids": job_ids, "status": payload.status}
+
+
+@app.get("/api/materials")
+def api_materials(job_id: str):
+    """Returns generated and human-edited drafts for one posting."""
+    app_doc = firestore_store.get_application(job_id)
+    if not app_doc:
+        raise HTTPException(status_code=404, detail="No application for that job_id.")
+
+    generated_cover_letter = app_doc.get("cover_letter")
+    generated_resume = app_doc.get("tailored_resume")
+    if not generated_cover_letter or not generated_resume:
+        raise HTTPException(status_code=404, detail="Application materials are not available.")
+
+    edited_cover_letter = app_doc.get("edited_cover_letter")
+    edited_resume = app_doc.get("edited_tailored_resume")
+    return {
+        "job_id": job_id,
+        "title": app_doc.get("title", ""),
+        "company": app_doc.get("company", ""),
+        "generated_cover_letter": generated_cover_letter,
+        "edited_cover_letter": edited_cover_letter,
+        "effective_cover_letter": (
+            edited_cover_letter if edited_cover_letter is not None else generated_cover_letter
+        ),
+        "cover_letter_edited_at": app_doc.get("cover_letter_edited_at"),
+        "generated_tailored_resume": generated_resume,
+        "edited_tailored_resume": edited_resume,
+        "effective_tailored_resume": edited_resume if edited_resume is not None else generated_resume,
+        "tailored_resume_edited_at": app_doc.get("tailored_resume_edited_at"),
+    }
+
+
+@app.put("/api/materials")
+def api_save_material(payload: MaterialEditRequest):
+    """Saves a human revision or restores the generated draft."""
+    if not firestore_store.get_application(payload.job_id):
+        raise HTTPException(status_code=404, detail="No application for that job_id.")
+
+    if payload.reset:
+        firestore_store.save_material_edit(payload.job_id, payload.material_type, None)
+        return {"job_id": payload.job_id, "material_type": payload.material_type, "edited": False}
+
+    if payload.material_type == "cover_letter":
+        value = (payload.cover_letter or "").strip()
+        if not value:
+            raise HTTPException(status_code=400, detail="Cover letter cannot be empty.")
+    else:
+        if payload.tailored_resume is None:
+            raise HTTPException(status_code=400, detail="Tailored resume is required.")
+        value = payload.tailored_resume.model_dump()
+
+    firestore_store.save_material_edit(payload.job_id, payload.material_type, value)
+    return {"job_id": payload.job_id, "material_type": payload.material_type, "edited": True}
+
+
 @app.post("/quick-add")
 async def quick_add_form(
     url: str = Form(""),
@@ -203,7 +385,7 @@ async def quick_add_form(
 
 
 @app.post("/run", dependencies=[Depends(require_run_token)])
-async def run_pipeline_endpoint():
+async def run_pipeline_endpoint(max_jobs: int | None = None, registry_only: bool = False):
     """Runs one full pass of the Job Search Pipeline.
 
     The control flow lives in career_agent/pipeline.py as ordinary Python; the
@@ -211,7 +393,135 @@ async def run_pipeline_endpoint():
     materials. Firestore, not session state, is what makes runs idempotent, so
     nothing here needs to persist between requests.
     """
-    return await pipeline.run_once(uuid.uuid4().hex[:8])
+    if max_jobs is not None and not 1 <= max_jobs <= config.MAX_JOBS_PER_RUN:
+        raise HTTPException(status_code=400, detail=f"max_jobs must be between 1 and {config.MAX_JOBS_PER_RUN}.")
+    return await pipeline.run_once(
+        uuid.uuid4().hex[:8], max_jobs=max_jobs, registry_only=registry_only
+    )
+
+
+@app.post("/discover-boards", dependencies=[Depends(require_run_token)])
+async def discover_boards(max_candidates: int | None = None):
+    """Run one bounded Board Scout pass; only API-validated boards are stored."""
+    if max_candidates is not None and not 1 <= max_candidates <= 12:
+        raise HTTPException(status_code=400, detail="max_candidates must be between 1 and 12.")
+    return await board_scout.run_once(max_candidates=max_candidates)
+
+
+# --- TalentOS // Studio (Freelance Client Pipeline) ---------------------------
+
+
+@app.post("/run-freelance", dependencies=[Depends(require_run_token)])
+async def run_freelance_pipeline_endpoint(max_leads: int | None = None):
+    """Runs one full pass of the Freelance Client Pipeline.
+
+    Same control flow pattern as /run: fetch leads from public freelance
+    boards, evaluate each one against the freelancer's profile, draft pitches
+    for matches, and send one digest email. The human always sends the pitch
+    on the platform itself.
+    """
+    if max_leads is not None and not 1 <= max_leads <= config.MAX_LEADS_PER_RUN:
+        raise HTTPException(
+            status_code=400,
+            detail=f"max_leads must be between 1 and {config.MAX_LEADS_PER_RUN}.",
+        )
+    return await freelance_graph.run_freelance_pipeline(
+        uuid.uuid4().hex[:8], max_leads=max_leads
+    )
+
+
+@app.get("/api/leads")
+def api_leads(status: str = "matched"):
+    """Freelance leads in the given status, as JSON for the frontend."""
+    statuses = ["matched", "pitched"] if status == "matched" else [status]
+    leads = firestore_store.get_leads_by_status(statuses)
+    return {"status": status, "leads": leads}
+
+
+class LeadStatusRequest(BaseModel):
+    lead_id: str
+    status: str
+
+
+class PitchEditRequest(BaseModel):
+    lead_id: str
+    pitch_message: str | None = None
+    reset: bool = False
+
+
+class FreelanceProfileRequest(BaseModel):
+    freelance_niche: str
+    freelance_availability: str
+    freelance_services: list[str]
+    freelance_portfolio_summary: str
+
+
+@app.get("/api/leads/{lead_id}")
+def api_lead(lead_id: str):
+    """Returns the pitch and evaluation for one lead."""
+    lead_doc = firestore_store.get_lead(lead_id)
+    if not lead_doc:
+        raise HTTPException(status_code=404, detail="No pitch for that lead_id.")
+    return lead_doc
+
+
+@app.put("/api/leads/{lead_id}/status")
+def api_lead_status(lead_id: str, status: str = Form(...)):
+    """Updates the human-owned lead status (sent, replied, archived)."""
+    if status not in ("sent", "replied", "archived", "matched", "pitched"):
+        raise HTTPException(status_code=400, detail="Invalid lead status.")
+    firestore_store.set_lead_status(lead_id, status)
+    return {"lead_id": lead_id, "status": status}
+
+
+@app.put("/api/pitch")
+def api_save_pitch(payload: PitchEditRequest):
+    """Saves a human-edited pitch or restores the generated draft."""
+    if not firestore_store.get_lead(payload.lead_id):
+        raise HTTPException(status_code=404, detail="No lead for that lead_id.")
+    if payload.reset:
+        firestore_store.save_pitch_edit(payload.lead_id, None)
+        return {"lead_id": payload.lead_id, "edited": False}
+    value = (payload.pitch_message or "").strip()
+    if not value:
+        raise HTTPException(status_code=400, detail="Pitch cannot be empty.")
+    firestore_store.save_pitch_edit(payload.lead_id, value)
+    return {"lead_id": payload.lead_id, "edited": True}
+
+
+@app.get("/api/freelance-profile")
+def api_freelance_profile():
+    """Return the freelance overlay fields for the current profile."""
+    profile = config.load_candidate_profile()
+    return {
+        "freelance_niche": profile.freelance_niche,
+        "freelance_availability": profile.freelance_availability,
+        "freelance_services": profile.freelance_services,
+        "freelance_portfolio_summary": profile.freelance_portfolio_summary,
+    }
+
+
+@app.put("/api/freelance-profile")
+def api_save_freelance_profile(payload: FreelanceProfileRequest):
+    """Update freelance overlay fields without overwriting job-search fields."""
+    profile = config.load_candidate_profile()
+    existing = firestore_store.get_profile() or asdict(profile)
+    updated = {
+        **existing,
+        "freelance_niche": payload.freelance_niche.strip(),
+        "freelance_availability": payload.freelance_availability.strip(),
+        "freelance_services": [s.strip() for s in payload.freelance_services if s.strip()],
+        "freelance_portfolio_summary": payload.freelance_portfolio_summary.strip(),
+    }
+    config._profile_from_dict(updated)
+    firestore_store.save_profile(updated)
+    config.invalidate_profile_cache()
+    return {
+        "freelance_niche": updated["freelance_niche"],
+        "freelance_availability": updated["freelance_availability"],
+        "freelance_services": updated["freelance_services"],
+        "freelance_portfolio_summary": updated["freelance_portfolio_summary"],
+    }
 
 
 if __name__ == "__main__":

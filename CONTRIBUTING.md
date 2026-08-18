@@ -21,8 +21,8 @@ whatever Python is on PATH. That cost an hour once.
 
 ```bash
 cd career-agent
-pytest                                     # 71 offline tests, ~2s
-uvicorn main:app --reload                  # then POST /run, browse /
+python -m pytest                                # 235 offline tests, ~6s
+uvicorn main:app --reload                       # then POST /run, browse /
 python benchmark_evaluators.py --models gemini-3.6-flash,gemini-2.5-flash-lite
 ```
 

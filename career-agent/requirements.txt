@@ -7,7 +7,18 @@ google-adk==2.6.3
 google-cloud-firestore==2.28.1
 google-genai==2.17.0
 httpx==0.28.1
+langchain-core==1.5.5
+# Held at 2.x deliberately, for two reasons that point the same way:
+# telemetry.py is written against the v2 client API (client.trace(),
+# trace.span(), trace.generation()), which v3 replaced with start_span /
+# start_observation; and v3+ re-based Langfuse on OpenTelemetry, pulling
+# opentelemetry-api/sdk >=1.44 against google-adk's <=1.42.1 pin. 2.x has no
+# OpenTelemetry dependency at all, so the conflict does not exist here.
+# Moving to 4.x means rewriting telemetry.py and re-checking that pin.
+langfuse==2.60.10
+langgraph==1.2.11
 pydantic==2.13.4
 python-dotenv==1.2.2
 python-multipart==0.0.32
 uvicorn[standard]==0.52.1
+

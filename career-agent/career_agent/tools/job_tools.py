@@ -9,23 +9,107 @@ from __future__ import annotations
 
 import asyncio
 import re
+from collections import Counter
+from datetime import datetime, timezone
 
 import httpx
 
 from .. import config, matching
 from ..models import JobListing
-from ..sources import aggregators, ats_boards
+from ..sources import aggregators, ats_boards, company_portals
 from ..storage import firestore_store
 
 # RemoteOK and some ATS edges reject the default client user-agent.
 _HTTP_HEADERS = {"User-Agent": "career-agent/0.1 (+https://github.com/)"}
+_AGGREGATOR_SOURCES = {"arbeitnow", "remotive", "remoteok", "jobicy"}
+
+
+def _posted_sort_key(job: JobListing) -> float:
+    """Normalize ISO and Unix source timestamps; unknown dates sort last."""
+    if not job.posted_at:
+        return 0
+    try:
+        value = str(job.posted_at)
+        if value.isdigit():
+            return datetime.fromtimestamp(int(value), timezone.utc).timestamp()
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+    except (ValueError, TypeError, OverflowError):
+        return 0
+
+
+def balanced_source_batch(jobs: list[JobListing], limit: int) -> list[JobListing]:
+    """Selects relevant jobs round-robin so one company/feed cannot dominate."""
+    if limit <= 0:
+        return []
+
+    by_source: dict[str, list[JobListing]] = {}
+    for job in jobs:
+        by_source.setdefault(job.source or "unknown", []).append(job)
+    for source_jobs in by_source.values():
+        source_jobs.sort(key=_posted_sort_key, reverse=True)
+
+    selected: list[JobListing] = []
+    positions = {source: 0 for source in by_source}
+    while len(selected) < limit:
+        progressed = False
+        for source, source_jobs in by_source.items():
+            position = positions[source]
+            if position >= len(source_jobs):
+                continue
+            selected.append(source_jobs[position])
+            positions[source] = position + 1
+            progressed = True
+            if len(selected) == limit:
+                break
+        if not progressed:
+            break
+    return selected
+
+
+def coverage_balanced_batch(
+    jobs: list[JobListing], limit: int, registry_sources: set[str] | None = None
+) -> list[JobListing]:
+    """Rotate discovered, broad-feed, and configured-company coverage."""
+    registry = {source.lower() for source in (registry_sources or set())}
+    channels: dict[str, list[JobListing]] = {"discovered": [], "broad_feed": [], "configured": []}
+    for job in jobs:
+        source = (job.source or "").lower()
+        if source in registry:
+            channels["discovered"].append(job)
+        elif source in _AGGREGATOR_SOURCES:
+            channels["broad_feed"].append(job)
+        else:
+            channels["configured"].append(job)
+
+    channel_batches = {
+        name: balanced_source_batch(channel_jobs, len(channel_jobs))
+        for name, channel_jobs in channels.items()
+    }
+    positions = {name: 0 for name in channels}
+    selected: list[JobListing] = []
+    while len(selected) < limit:
+        progressed = False
+        for name in ("discovered", "broad_feed", "configured"):
+            position = positions[name]
+            if position >= len(channel_batches[name]):
+                continue
+            selected.append(channel_batches[name][position])
+            positions[name] += 1
+            progressed = True
+            if len(selected) == limit:
+                break
+        if not progressed:
+            break
+    return selected
 
 
 def _client() -> httpx.AsyncClient:
     return httpx.AsyncClient(headers=_HTTP_HEADERS, follow_redirects=True)
 
 
-async def _fetch_all_sources(sources: list[str] | None = None) -> tuple[list[JobListing], dict[str, str]]:
+async def _fetch_all_sources(
+    sources: list[str] | None = None, registry_only: bool = False
+) -> tuple[list[JobListing], dict[str, str]]:
     """Fetches every configured source concurrently.
 
     Returns the combined listings plus a per-source error map. A flaky source
@@ -34,28 +118,65 @@ async def _fetch_all_sources(sources: list[str] | None = None) -> tuple[list[Job
     end up debugging the wrong thing.
     """
     labelled = []
+    errors: dict[str, str] = {}
+    configured = {
+        "greenhouse": [] if registry_only else list(sources or config.GREENHOUSE_BOARD_SLUGS),
+        "lever": [] if registry_only else list(config.LEVER_BOARD_SLUGS),
+        "ashby": [] if registry_only else list(config.ASHBY_BOARD_SLUGS),
+        "smartrecruiters": [] if registry_only else list(config.SMARTRECRUITERS_COMPANY_SLUGS),
+    }
+    portal_sources = [] if registry_only else [dict(portal) for portal in config.COMPANY_CAREER_PORTALS]
+    try:
+        registry = firestore_store.get_active_board_registry()
+    except Exception as exc:  # noqa: BLE001 - registry failure must not stop configured sources
+        registry = []
+        errors["board_registry"] = f"{type(exc).__name__}: {str(exc)[:120]}"
+    for board in registry:
+        provider = board.get("provider")
+        slug = board.get("slug")
+        if provider in configured and slug and slug not in configured[provider]:
+            configured[provider].append(slug)
+        elif provider in company_portals.PORTAL_PROVIDERS and slug:
+            portal = {
+                "provider": provider,
+                "slug": slug,
+                "company": board.get("company") or slug,
+                "url": board.get("careers_url") or "",
+                "careers_url": board.get("careers_url") or "",
+            }
+            if not any(company_portals.portal_source(item) == company_portals.portal_source(portal) for item in portal_sources):
+                portal_sources.append(portal)
+
     async with _client() as client:
-        for slug in (sources or config.GREENHOUSE_BOARD_SLUGS):
+        for slug in configured["greenhouse"]:
             labelled.append((f"greenhouse:{slug}", ats_boards.fetch_greenhouse(slug, client)))
-        for slug in config.LEVER_BOARD_SLUGS:
+        for slug in configured["lever"]:
             labelled.append((f"lever:{slug}", ats_boards.fetch_lever(slug, client)))
-        for slug in config.ASHBY_BOARD_SLUGS:
+        for slug in configured["ashby"]:
             labelled.append((f"ashby:{slug}", ats_boards.fetch_ashby(slug, client)))
-        for slug in config.SMARTRECRUITERS_COMPANY_SLUGS:
+        for slug in configured["smartrecruiters"]:
             labelled.append((f"smartrecruiters:{slug}", ats_boards.fetch_smartrecruiters(slug, client)))
-        if config.ENABLE_ARBEITNOW:
+        for portal in portal_sources:
+            labelled.append(
+                (
+                    company_portals.portal_source(portal),
+                    company_portals.fetch_portal(
+                        portal, client, detail_limit=config.COMPANY_PORTAL_MAX_DETAIL_PAGES
+                    ),
+                )
+            )
+        if config.ENABLE_ARBEITNOW and not registry_only:
             labelled.append(("arbeitnow", aggregators.fetch_arbeitnow(client)))
-        if config.ENABLE_REMOTIVE:
+        if config.ENABLE_REMOTIVE and not registry_only:
             labelled.append(("remotive", aggregators.fetch_remotive(client)))
-        if config.ENABLE_REMOTEOK:
+        if config.ENABLE_REMOTEOK and not registry_only:
             labelled.append(("remoteok", aggregators.fetch_remoteok(client)))
-        if config.ENABLE_JOBICY:
+        if config.ENABLE_JOBICY and not registry_only:
             labelled.append(("jobicy", aggregators.fetch_jobicy(client)))
 
         results = await asyncio.gather(*(task for _, task in labelled), return_exceptions=True)
 
     jobs: list[JobListing] = []
-    errors: dict[str, str] = {}
     for (name, _), result in zip(labelled, results):
         if isinstance(result, BaseException):
             errors[name] = f"{type(result).__name__}: {str(result)[:120]}"
@@ -65,7 +186,11 @@ async def _fetch_all_sources(sources: list[str] | None = None) -> tuple[list[Job
 
 
 async def collect_new_jobs(
-    run_id: str, evaluator: str = "", sources: list[str] | None = None
+    run_id: str,
+    evaluator: str = "",
+    sources: list[str] | None = None,
+    max_jobs: int | None = None,
+    registry_only: bool = False,
 ) -> list[JobListing]:
     """Returns this run's batch of jobs to evaluate, and records how it was chosen.
 
@@ -77,7 +202,7 @@ async def collect_new_jobs(
     # guess has no business overruling them.
     quick_adds = firestore_store.drain_quick_adds()
 
-    jobs, source_errors = await _fetch_all_sources(sources)
+    jobs, source_errors = await _fetch_all_sources(sources, registry_only=registry_only)
     unseen = firestore_store.find_unseen(jobs, evaluator=evaluator)
 
     profile = config.load_candidate_profile()
@@ -87,7 +212,15 @@ async def collect_new_jobs(
     # rather than whatever the feed listed first. Nothing is marked seen here:
     # dedupe is claimed by pipeline.run_once once a verdict exists, so a run
     # that dies partway leaves its jobs for the next one.
-    batch = (quick_adds + relevant)[: config.MAX_JOBS_PER_RUN]
+    limit = max(1, min(max_jobs or config.MAX_JOBS_PER_RUN, config.MAX_JOBS_PER_RUN))
+    quick_add_batch = quick_adds[:limit]
+    feed_capacity = max(0, limit - len(quick_add_batch))
+    try:
+        registry_sources = set(firestore_store.get_active_board_ids())
+    except Exception:  # registry fetch already reports its source error above
+        registry_sources = set()
+    feed_batch = coverage_balanced_batch(relevant, feed_capacity, registry_sources)
+    batch = quick_add_batch + feed_batch
 
     # Only now are descriptions worth paying for -- see fetch_smartrecruiters.
     async with _client() as client:
@@ -104,10 +237,12 @@ async def collect_new_jobs(
             "unseen": len(unseen),
             "relevant_after_prefilter": len(relevant),
             "taken_this_run": len(batch),
-            "deferred_to_next_run": max(0, len(relevant) - len(batch)),
+            "deferred_to_next_run": max(0, len(relevant) - len(feed_batch)),
+            "selected_by_source": dict(Counter(job.source or "unknown" for job in batch)),
             "filtered_out": filtered_out,
             "source_errors": source_errors,
             "evaluator": evaluator,
+            "registry_only": registry_only,
         },
     )
     return batch

@@ -1,15 +1,14 @@
-# Career Agent -- Job Search Pipeline (Taskmaster track)
+# TalentOS // Careers — Job Search Pipeline (Taskmaster track)
 
-Autonomous agent that fetches new job listings from mid/large-company career
-portals and popular job sites, checks each one against your hard
+An **AllStackLabs** product. Autonomous agent that fetches new job listings from
+company career portals and popular job sites, checks each one against your hard
 requirements, tells you exactly which requirement a non-match failed, and
 drafts a tailored resume + cover letter for the ones that match -- then
 emails you a single digest. See `../hackathon-project-plan.md` for the full
 design rationale (including why this doesn't scrape LinkedIn/Indeed).
 
-This is the first of the two Career Agent workflows (Job Search now,
-Freelance Client Pipeline next). The Wireframe Assistant is a separate
-project/track and lives elsewhere.
+This is TalentOS // Careers, the first of two TalentOS workflows (Job Search
+now, Freelance Client Pipeline -- TalentOS // Studio -- next).
 
 ## How it works
 
@@ -36,7 +35,7 @@ project/track and lives elsewhere.
    - Leave `GOOGLE_CLOUD_LOCATION=global` -- the Gemini 3.x models are only
      served on Vertex's global endpoint and 404 on regional ones
    - `GREENHOUSE_BOARD_SLUGS` / `LEVER_BOARD_SLUGS`: comma-separated slugs
-     for the mid/large companies you're targeting (find a slug from the
+     for companies you're targeting (find a slug from the
      company's careers page URL -- `boards.greenhouse.io/<slug>` or
      `jobs.lever.co/<slug>`)
    - `DIGEST_TO_EMAIL` and `SMTP_USER`/`SMTP_PASSWORD` (a Gmail app password
@@ -61,6 +60,23 @@ adk web .
 uvicorn main:app --reload
 curl -X POST http://localhost:8080/run
 ```
+
+**Board Scout** -- one explicit Google Search-grounded call proposes public
+employer career sources. It covers Greenhouse, Lever, Ashby, SmartRecruiters,
+Workable, public Workday CXS career endpoints, and employer-published feeds or
+structured job pages. Deterministic code rejects unsafe URLs and validates that
+each source currently returns at least one posting before saving it to
+`job_board_registry`. Normal job runs automatically merge that registry with
+configured sources:
+
+```bash
+curl -X POST 'http://localhost:8080/discover-boards?max_candidates=6'
+# Bounded check of newly discovered boards only:
+curl -X POST 'http://localhost:8080/run?registry_only=true&max_jobs=3'
+```
+
+Run discovery weekly or manually, not before every job run. The daily job
+agent reuses the cached registry without another search call.
 
 **Review UI** -- open <http://localhost:8080/> after a run. Server-rendered
 from Firestore, no build step and no external assets, so it deploys with the
@@ -89,6 +105,52 @@ label, and:
 
 The agent never submits anything. It finds, judges, drafts, and hands you the
 link and the documents -- per the guardrail this project is built around.
+
+Location matching is India/remote-first. Onsite roles outside India reach the
+evaluator only when the posting explicitly offers visa sponsorship and is
+junior/entry-level or asks for at most two years of experience. A remote label
+is not treated as worldwide: the evaluator verifies that working from India is
+actually allowed. Capped batches rotate across Board Scout discoveries, broad
+feeds, and configured company boards so famous employers cannot monopolize a
+run.
+
+### Next.js product UI
+
+The separate frontend lives in `frontend/` and is designed for Firebase App
+Hosting. It adds Google and email/password sign-in, a responsive application
+dashboard, evidence and missing-information panels, quick-add, tailored-resume
+and cover-letter editors, and applied-status tracking.
+
+Each material opens in a separate review window. The cover letter uses a
+focused text editor; the resume keeps headline, summary, skills, experience,
+projects, and education as structured fields. Human revisions are stored in
+separate `edited_*` fields on the posting, so the generated draft is never
+overwritten. Users can restore the generated version, copy the current cover
+letter, or print the current resume to PDF. Resume export prefers the edited
+version when one exists.
+
+The first hosted release is intentionally a private beta. Every Next.js route
+handler verifies the Firebase ID token and checks `AUTHORIZED_EMAILS` before it
+can call the private Cloud Run service. The browser never receives Cloud Run
+credentials, and Cloud Run remains protected by IAM.
+
+```bash
+cd frontend
+copy .env.example .env.local
+npm install
+npm run dev
+```
+
+Required App Hosting runtime configuration:
+
+- `CAREER_AGENT_API_URL`: the private Cloud Run service URL.
+- `AUTHORIZED_EMAILS`: comma-separated beta users; keep this out of Git.
+- `CAREER_AGENT_RUN_TOKEN`: only required if the backend enables the optional
+  second gate for spending endpoints.
+
+App Hosting injects the registered Firebase Web App configuration in hosted
+builds. Local development reads the public web configuration from
+`NEXT_PUBLIC_FIREBASE_CONFIG` in `.env.local`.
 
 **Quick-add** -- for anything the feeds miss. Use the "Add a posting you
 found yourself" box on the review page, or:
@@ -148,7 +210,7 @@ you upload rather than something this code fetches. Not yet implemented.
 
 ```bash
 pip install -r requirements-dev.txt
-pytest        # 71 tests, ~2s
+python -m pytest   # 201 tests, ~6s
 ```
 
 Every test is offline -- no Firestore, no model calls, no network -- so the
@@ -158,7 +220,8 @@ regressions are pinned.
 
 ## Deploy to Cloud Run
 
-Currently deployed and running on a 12-hourly schedule.
+TalentOS // Careers is deployed as the `talentos` Cloud Run service, running
+on a 12-hourly schedule.
 
 ### One-time setup
 
@@ -166,13 +229,13 @@ Two service accounts, each with only what it needs:
 
 ```bash
 PROJECT=your-project
-gcloud iam service-accounts create career-agent-run
-gcloud iam service-accounts create career-agent-scheduler
+gcloud iam service-accounts create talentos-run
+gcloud iam service-accounts create talentos-scheduler
 
 # Runtime: Firestore + Vertex only
 for ROLE in roles/datastore.user roles/aiplatform.user; do
   gcloud projects add-iam-policy-binding "$PROJECT" \
-    --member="serviceAccount:career-agent-run@$PROJECT.iam.gserviceaccount.com" \
+    --member="serviceAccount:talentos-run@$PROJECT.iam.gserviceaccount.com" \
     --role="$ROLE" --condition=None
 done
 ```
@@ -182,41 +245,41 @@ than into the image, and access is granted on that one secret rather than
 project-wide:
 
 ```bash
-gcloud secrets create career-agent-profile --data-file=profile.json
-gcloud secrets add-iam-policy-binding career-agent-profile \
-  --member="serviceAccount:career-agent-run@$PROJECT.iam.gserviceaccount.com" \
+gcloud secrets create talentos-profile --data-file=profile.json
+gcloud secrets add-iam-policy-binding talentos-profile \
+  --member="serviceAccount:talentos-run@$PROJECT.iam.gserviceaccount.com" \
   --role=roles/secretmanager.secretAccessor
 ```
 
 ### Deploy
 
 ```bash
-gcloud run deploy career-agent \
+gcloud run deploy talentos \
   --source . --region us-central1 \
-  --service-account "career-agent-run@$PROJECT.iam.gserviceaccount.com" \
+  --service-account "talentos-run@$PROJECT.iam.gserviceaccount.com" \
   --no-allow-unauthenticated \
   --env-vars-file cloudrun-env.yaml \
-  --set-secrets "/secrets/profile.json=career-agent-profile:latest" \
+  --set-secrets "/secrets/profile.json=talentos-profile:latest" \
   --memory 1Gi --timeout 900 --concurrency 4 --max-instances 3
 ```
 
 Use `--env-vars-file`, not `--set-env-vars`: several values contain commas
-(`GREENHOUSE_BOARD_SLUGS=anthropic,scaleai,databricks`) and would be parsed as
-separate variables. Set `PROFILE_PATH=/secrets/profile.json` in that file, and
+(`GREENHOUSE_BOARD_SLUGS=anthropic,scaleai,databricks`) and would be parsed
+as separate variables. Set `PROFILE_PATH=/secrets/profile.json` in that file, and
 mount the secret **outside** `/app` so the volume cannot shadow application
 code.
 
 ### Schedule it
 
 ```bash
-gcloud run services add-iam-policy-binding career-agent --region us-central1 \
-  --member="serviceAccount:career-agent-scheduler@$PROJECT.iam.gserviceaccount.com" \
+gcloud run services add-iam-policy-binding talentos --region us-central1 \
+  --member="serviceAccount:talentos-scheduler@$PROJECT.iam.gserviceaccount.com" \
   --role=roles/run.invoker
 
-gcloud scheduler jobs create http career-agent-run --location us-central1 \
+gcloud scheduler jobs create http talentos-run --location us-central1 \
   --schedule="0 */12 * * *" --time-zone="Asia/Kolkata" \
   --uri="$SERVICE_URL/run" --http-method=POST \
-  --oidc-service-account-email="career-agent-scheduler@$PROJECT.iam.gserviceaccount.com" \
+  --oidc-service-account-email="talentos-scheduler@$PROJECT.iam.gserviceaccount.com" \
   --oidc-token-audience="$SERVICE_URL" --attempt-deadline=900s
 ```
 
@@ -227,8 +290,8 @@ can call this service and nothing else.
 
 - **The URL printed by `gcloud run deploy` was not the working one.** Take the
   URL from `gcloud run services describe ... --format='value(status.url)'`.
-- **`/healthz` never reaches the container.** Google's frontend returns its own
-  404 for that path while every other path serves normally. The health
+- **`/healthz` never reaches the container.** Google's frontend returns its
+  own 404 for that path while every other path serves normally. The health
   endpoint is `/health`.
 
 ### Access
@@ -236,7 +299,7 @@ can call this service and nothing else.
 The service is private. To view the UI:
 
 ```bash
-gcloud run services proxy career-agent --region us-central1
+gcloud run services proxy talentos --region us-central1
 ```
 
 `--no-allow-unauthenticated` is what keeps a stranger from triggering billable
@@ -246,14 +309,27 @@ runs or reading your job search. If you ever make the service public, set
 
 ## What's simplified for the hackathon MVP (and the honest list of caveats)
 
-- **Sources implemented:** Greenhouse, Lever, Ashby and SmartRecruiters for
-  company boards; Arbeitnow, Remotive, RemoteOK and Jobicy as aggregator
-  feeds. All are free, public and keyless. Two notes:
+- **Sources implemented:** Greenhouse, Lever, Ashby, SmartRecruiters and
+  Workable for startup-through-MNC employer boards; explicitly configured
+  public Workday CXS career endpoints; employer-published RSS/Atom, sitemap,
+  JSON feed and schema.org `JobPosting` sources used by Oracle Recruiting,
+  SAP SuccessFactors, iCIMS, Taleo and custom career sites; plus Arbeitnow,
+  Remotive, RemoteOK and Jobicy aggregator feeds. Board Scout validates every
+  discovery before the job agent consumes it. No source connector logs in,
+  impersonates a recruiter, solves CAPTCHAs, or calls internal/recruiter APIs.
+  The grounded discovery call is a Vertex model/search request. Notes:
   - SmartRecruiters slugs are **case-sensitive** (`BoschGroup` returns 4766
     postings, `bosch` returns 0), and its list endpoint carries no
     description, so each one costs a second request. Those are fetched lazily
     for only the jobs that survive the pre-filter and the per-run cap.
   - The SmartRecruiters list is one page of 100; pagination isn't implemented.
+  - Workday CXS is the employer's external career-site interface rather than a
+    contracted Workday integration. It is opt-in and may change by tenant.
+    Oracle/SAP/iCIMS/Taleo are ingested only through data the employer itself
+    publishes publicly; their internal recruiting APIs are not used.
+  - Sitemap and Workday detail reads are bounded by
+    `COMPANY_PORTAL_MAX_DETAIL_PAGES` (25 by default). Source-level failures
+    are retained in each run's `source_errors` instead of disappearing.
 - **429s are handled with retries, not a quota increase.** Gemini on Vertex
   runs on [dynamic shared
   quota](https://cloud.google.com/vertex-ai/generative-ai/docs/resources/dynamic-shared-quota):
@@ -350,18 +426,22 @@ falls back to the flash rate and is flagged in the run summary and the UI.
   Capturing all ~2,500 fetched per run would be ~2,500 writes against a
   20k/day free tier, for postings the pre-filter already discarded; that
   belongs with a shared fetch scheduler.
-- **The profile lives in a local `profile.json`, not Firestore.** Simpler to
-  hand-edit for now; move it into a Firestore doc later if you want to edit
-  it from a UI instead of a file (see the docstring in `config.py`).
-- **Jobs are capped per run (`MAX_JOBS_PER_RUN`, default 5) and there is no
-  relevance pre-filter yet.** The cap is mandatory -- one Greenhouse board can
+- **The profile is stored in Firestore once saved from the UI.** The local
+  `profile.json` file is the bootstrap path — a fresh install, local development,
+  and the read-only Secret Manager mount on Cloud Run. Firestore wins once a
+  profile has been saved; see `config.py`'s `load_candidate_profile`.
+- **Jobs are capped per run (`MAX_JOBS_PER_RUN`, default 5).** The cap is
+  mandatory -- one Greenhouse board can
   return 500+ postings and the Arbeitnow feed ~175 (~1.8M characters) per page.
   Jobs are screened before the cap on two deterministic checks, so the budget
   goes to plausible roles: the title must match one of `target_titles`, and it
   must not contain a phrase from `EXCLUDE_TITLE_KEYWORDS` (staff, principal,
   director, senior...). On a 2575-posting sweep that leaves 271 -- 2059
-  dropped on title, 245 on seniority. Both counts are reported in the digest
-  and the UI, since a pre-filtered job never gets an individual reason.
+  dropped on title, 245 on seniority. Relevant jobs are then selected
+  round-robin across sources, so one high-volume company board cannot consume
+  the entire run. Both filtering counts and selected source counts are
+  reported in the digest and the UI, since a pre-filtered job never gets an
+  individual reason.
   Note that `senior` is in the default list, which drops "Senior Engineer"
   roles asking only 3 years; remove it if you want those back.
 - **Skipped jobs are re-evaluated when the evaluator changes.** Each
@@ -392,4 +472,4 @@ falls back to the flash rate and is flagged in the run summary and the UI.
   `gemini-3.6-pro` is not currently available.
 - Google agent framework: ADK (`google-adk`), `LlmAgent` in
   `career_agent/agent.py`.
-- GCP infra: Cloud Run (this service) + Firestore (all pipeline state).
+- GCP infra: Cloud Run (`talentos` service) + Firestore (all pipeline state).

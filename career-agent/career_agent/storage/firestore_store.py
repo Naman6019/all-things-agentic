@@ -20,6 +20,9 @@ Collections:
   runs/{run_id}
       What one run fetched, filtered, evaluated and spent.
 
+  job_board_registry/{provider}:{slug}
+      Shared public ATS boards discovered and API-validated by Board Scout.
+
 Document ids are prefixed with the user rather than merely carrying a user_id
 field: the prefix is what actually prevents two users colliding on the same
 posting. The `__` separator is deliberate -- job ids already contain `:`
@@ -35,7 +38,7 @@ from google.cloud import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
 
 from .. import config
-from ..models import JobEvaluation, JobListing, TailoredMaterials
+from ..models import JobEvaluation, JobListing, LeadEvaluation, ClientLead, PitchedMaterials, TailoredMaterials
 
 _client: firestore.Client | None = None
 
@@ -212,6 +215,7 @@ def save_job_listing(job: JobListing) -> None:
             "remote": job.remote,
             "url": job.url,
             "source": job.source,
+            "posted_at": job.posted_at,
         },
         merge=True,
     )
@@ -232,6 +236,7 @@ def save_evaluation(run_id: str, evaluation: JobEvaluation) -> None:
             "unmet_requirements": evaluation.unmet_requirements,
             "missing_information": evaluation.missing_information,
             "reasoning": evaluation.reasoning,
+            "match_strength": evaluation.match_strength,
             "evaluated_at": evaluation.evaluated_at,
             "status": "matched" if evaluation.match else "skipped",
         },
@@ -288,6 +293,48 @@ def save_profile_source(name: str, payload: dict) -> None:
     )
 
 
+def get_active_board_registry(limit: int | None = None) -> list[dict]:
+    """Return API-validated shared boards, newest validation first."""
+    boards = [
+        doc.to_dict() or {}
+        for doc in get_client().collection("job_board_registry").stream()
+        if (doc.to_dict() or {}).get("active", False)
+    ]
+    boards.sort(key=lambda board: board.get("validated_at", ""), reverse=True)
+    return boards[: limit or config.BOARD_REGISTRY_MAX_ACTIVE]
+
+
+def get_active_board_ids() -> list[str]:
+    return [f"{board.get('provider', '')}:{board.get('slug', '')}".lower() for board in get_active_board_registry()]
+
+
+def upsert_board_registry(board: dict, run_id: str) -> None:
+    """Store a board only after Board Scout has validated its public API."""
+    provider = str(board["provider"]).lower()
+    slug = str(board["slug"])
+    get_client().collection("job_board_registry").document(f"{provider}:{slug.lower()}").set(
+        {
+            "provider": provider,
+            "slug": slug,
+            "company": board.get("company") or slug,
+            "careers_url": board.get("careers_url") or "",
+            "active": True,
+            "job_count_at_validation": int(board.get("job_count") or 0),
+            "validated_at": datetime.now(timezone.utc).isoformat(),
+            "discovery_run_id": run_id,
+        },
+        merge=True,
+    )
+
+
+def save_board_discovery_run(run_id: str, result: dict) -> None:
+    get_client().collection("board_discovery_runs").document(run_id).set(result)
+
+
+def get_board_discovery_run(run_id: str) -> dict:
+    return (get_client().collection("board_discovery_runs").document(run_id).get().to_dict()) or {}
+
+
 def get_profile_source(name: str, max_age_hours: int) -> dict | None:
     """Returns cached enrichment if it is fresh enough, else None.
 
@@ -328,6 +375,45 @@ def set_application_status(job_id: str, status: str) -> None:
             **_owner_fields(job_id),
             "status": status,
             "status_changed_at": datetime.now(timezone.utc).isoformat(),
+        },
+        merge=True,
+    )
+
+
+def archive_application(job_id: str, reason: str) -> None:
+    """Hide an obsolete recommendation without deleting its evidence or drafts."""
+    ref = get_client().collection("applications").document(_scoped(job_id))
+    snapshot = ref.get()
+    if not snapshot.exists:
+        return
+    current = snapshot.to_dict() or {}
+    ref.set(
+        {
+            **_owner_fields(job_id),
+            "previous_status": current.get("status"),
+            "status": "archived",
+            "archived_reason": reason,
+            "archived_at": datetime.now(timezone.utc).isoformat(),
+        },
+        merge=True,
+    )
+
+
+def save_material_edit(job_id: str, material_type: str, value) -> None:
+    """Saves or clears the human-edited draft without changing AI output."""
+    fields = {
+        "cover_letter": ("edited_cover_letter", "cover_letter_edited_at"),
+        "tailored_resume": ("edited_tailored_resume", "tailored_resume_edited_at"),
+    }
+    if material_type not in fields:
+        raise ValueError(f"Unsupported material type: {material_type}")
+
+    value_field, timestamp_field = fields[material_type]
+    get_client().collection("applications").document(_scoped(job_id)).set(
+        {
+            **_owner_fields(job_id),
+            value_field: value,
+            timestamp_field: datetime.now(timezone.utc).isoformat() if value is not None else None,
         },
         merge=True,
     )
@@ -394,4 +480,179 @@ def get_run_applications(run_id: str) -> list[dict]:
     """Applications touched by one run. Run ids are unique, so this needs no user filter."""
     db = get_client()
     docs = db.collection("applications").where(filter=FieldFilter("run_id", "==", run_id)).stream()
+    return [_with_job_id(d) for d in docs]
+
+
+# --- TalentOS // Studio (Freelance Client Pipeline) ---------------------------
+# Separate collections mirroring the job pipeline's structure:
+#   leads/{lead_id}           — shared lead corpus (same text for every user)
+#   leads_seen/{user}__{lead} — per-user dedupe marker
+#   pitches/{user}__{lead}    — per-user verdict + drafted pitch
+#   freelance_runs/{run_id}   — run summaries
+
+
+def find_unseen_leads(leads: list[ClientLead], evaluator: str = "") -> list[ClientLead]:
+    """Returns leads still worth evaluating for the current user. Read-only.
+
+    Same dedupe logic as find_unseen: a lead counts as seen when this user has a
+    marker AND either it matched, or it was skipped by the same evaluator.
+    """
+    db = get_client()
+    doc_ids = [_scoped(lead.lead_id) for lead in leads]
+    refs = [db.collection("leads_seen").document(doc_id) for doc_id in doc_ids]
+    claimed: set[str] = set()
+    for start in range(0, len(refs), _READ_CHUNK):
+        for snapshot in db.get_all(refs[start : start + _READ_CHUNK]):
+            if not snapshot.exists:
+                continue
+            marker = snapshot.to_dict() or {}
+            if not config.REEVALUATE_SKIPS_ON_CHANGE:
+                claimed.add(snapshot.id)
+                continue
+            if marker.get("matched", True):
+                claimed.add(snapshot.id)
+            elif marker.get("evaluator", "") == evaluator:
+                claimed.add(snapshot.id)
+    return [lead for lead, doc_id in zip(leads, doc_ids) if doc_id not in claimed]
+
+
+def mark_lead_seen(lead_id: str, matched: bool = True, evaluator: str = "") -> None:
+    """Records one lead's verdict in leads_seen for the current user."""
+    db = get_client()
+    db.collection("leads_seen").document(_scoped(lead_id)).set(
+        {
+            **_owner_fields(lead_id),
+            "seen_at": datetime.now(timezone.utc).isoformat(),
+            "matched": matched,
+            "evaluator": evaluator,
+        },
+        merge=True,
+    )
+
+
+def save_lead_listing(lead: ClientLead) -> None:
+    """Writes the lead to the shared corpus and denormalizes display fields."""
+    db = get_client()
+    db.collection("leads").document(lead.lead_id).set(
+        {**asdict(lead), "last_fetched_at": datetime.now(timezone.utc).isoformat()},
+        merge=True,
+    )
+    db.collection("pitches").document(_scoped(lead.lead_id)).set(
+        {
+            **_owner_fields(lead.lead_id),
+            "title": lead.title,
+            "client": lead.client,
+            "budget": lead.budget,
+            "timeline": lead.timeline,
+            "url": lead.url,
+            "source": lead.source,
+            "posted_at": lead.posted_at,
+        },
+        merge=True,
+    )
+
+
+def save_lead_evaluation(run_id: str, evaluation: LeadEvaluation) -> None:
+    db = get_client()
+    db.collection("pitches").document(_scoped(evaluation.lead_id)).set(
+        {
+            **_owner_fields(evaluation.lead_id),
+            "run_id": run_id,
+            "match": evaluation.match,
+            "unmet_requirements": evaluation.unmet_requirements,
+            "missing_information": evaluation.missing_information,
+            "reasoning": evaluation.reasoning,
+            "match_strength": evaluation.match_strength,
+            "evaluated_at": evaluation.evaluated_at,
+            "status": "matched" if evaluation.match else "skipped",
+        },
+        merge=True,
+    )
+
+
+def save_pitched_materials(materials: PitchedMaterials) -> None:
+    db = get_client()
+    db.collection("pitches").document(_scoped(materials.lead_id)).set(
+        {
+            **_owner_fields(materials.lead_id),
+            "pitch_message": materials.pitch_message,
+            "relevant_portfolio": materials.relevant_portfolio,
+            "suggested_rate": materials.suggested_rate,
+            "contact_method": materials.contact_method,
+            "materials_created_at": materials.created_at,
+            "status": "pitched",
+        },
+        merge=True,
+    )
+
+
+def get_lead(lead_id: str) -> dict:
+    """One pitch record for the current user."""
+    snapshot = get_client().collection("pitches").document(_scoped(lead_id)).get()
+    return _with_job_id(snapshot) if snapshot.exists else {}
+
+
+def get_leads_by_status(statuses: list[str]) -> list[dict]:
+    """The current user's freelance leads in any of the given statuses, newest first."""
+    db = get_client()
+    docs = (
+        db.collection("pitches")
+        .where(filter=FieldFilter("user_id", "==", config.USER_ID))
+        .stream()
+    )
+    wanted = set(statuses)
+    leads = [a for a in (_with_job_id(d) for d in docs) if a.get("status") in wanted]
+    leads.sort(
+        key=lambda a: a.get("materials_created_at") or a.get("evaluated_at") or "",
+        reverse=True,
+    )
+    return leads
+
+
+def save_pitch_edit(lead_id: str, value: str | None) -> None:
+    """Saves or clears a human-edited pitch without changing the AI draft."""
+    get_client().collection("pitches").document(_scoped(lead_id)).set(
+        {
+            **_owner_fields(lead_id),
+            "edited_pitch_message": value,
+            "pitch_edited_at": datetime.now(timezone.utc).isoformat() if value is not None else None,
+        },
+        merge=True,
+    )
+
+
+def set_lead_status(lead_id: str, status: str) -> None:
+    """Records that the freelancer acted on a lead (sent, replied, archived)."""
+    get_client().collection("pitches").document(_scoped(lead_id)).set(
+        {
+            **_owner_fields(lead_id),
+            "status": status,
+            "status_changed_at": datetime.now(timezone.utc).isoformat(),
+        },
+        merge=True,
+    )
+
+
+def save_freelance_run_summary(run_id: str, summary: dict) -> None:
+    db = get_client()
+    db.collection("freelance_runs").document(run_id).set(
+        dict(
+            summary,
+            run_id=run_id,
+            user_id=config.USER_ID,
+            recorded_at=datetime.now(timezone.utc).isoformat(),
+        ),
+        merge=True,
+    )
+
+
+def get_freelance_run_summary(run_id: str) -> dict:
+    db = get_client()
+    return (db.collection("freelance_runs").document(run_id).get().to_dict()) or {}
+
+
+def get_freelance_run_leads(run_id: str) -> list[dict]:
+    """Leads touched by one freelance run."""
+    db = get_client()
+    docs = db.collection("pitches").where(filter=FieldFilter("run_id", "==", run_id)).stream()
     return [_with_job_id(d) for d in docs]

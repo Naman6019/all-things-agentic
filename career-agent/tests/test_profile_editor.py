@@ -36,7 +36,20 @@ class TestFormCoverage:
         which silently resets to its default when they save."""
         editable = set(CandidateProfile.__dataclass_fields__)
         covered = {name for name, _, _, _ in profile_ui.FIELDS}
-        assert editable - covered == set(), f"not editable: {editable - covered}"
+        # Structured locations are owned by the authenticated frontend page;
+        # this legacy HTML form preserves them when it saves other fields.
+        # Freelance overlay fields are owned by the TalentOS // Studio settings
+        # page, not this legacy Careers-only form.
+        expected_uncovered = {
+            "location_preferences",
+            "freelance_niche",
+            "freelance_availability",
+            "freelance_services",
+            "freelance_portfolio_summary",
+            "freelance_rate_min",
+            "freelance_rate_currency",
+        }
+        assert editable - covered == expected_uncovered, f"not editable: {editable - covered}"
 
     def test_no_form_field_refers_to_a_nonexistent_profile_field(self):
         editable = set(CandidateProfile.__dataclass_fields__)

@@ -7,6 +7,8 @@ these arguments" with a response that either parses or fails loudly.
 """
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -17,6 +19,14 @@ class JobVerdict(BaseModel):
         description=(
             "True if nothing the posting actually STATES rules the candidate out. "
             "A requirement the posting is silent about must not make this False."
+        )
+    )
+    match_strength: Literal["strong", "medium", "weak"] = Field(
+        description=(
+            "Strength of fit based on stated requirements and demonstrated candidate evidence. "
+            "Use strong for direct evidence across most important requirements, medium when the "
+            "candidate qualifies but important evidence is incomplete, and weak when fit is "
+            "marginal or the job has an unmet requirement."
         )
     )
     unmet_requirements: list[str] = Field(
@@ -94,3 +104,83 @@ class DraftedMaterials(BaseModel):
         )
     )
     cover_letter: str = Field(description="A 150-250 word cover letter for this posting.")
+
+
+# --- TalentOS // Studio (Freelance Client Pipeline) ---------------------------
+
+
+class LeadVerdict(BaseModel):
+    """One freelance lead judged against the freelancer's profile.
+
+    Same 3-state logic as JobVerdict, applied to freelance criteria. Silence is
+    never a rejection -- a lead that doesn't state a budget is an opportunity
+    to negotiate, not a mismatch.
+    """
+
+    match: bool = Field(
+        description=(
+            "True if nothing the lead actually STATES rules the freelancer out. "
+            "A requirement the lead is silent about (budget, timeline) must not "
+            "make this False."
+        )
+    )
+    match_strength: Literal["strong", "medium", "weak"] = Field(
+        description=(
+            "Strength of fit: strong when the freelancer's services directly "
+            "match the stated needs and portfolio demonstrates similar work, "
+            "medium when qualified but evidence is incomplete, weak when fit "
+            "is marginal."
+        )
+    )
+    unmet_requirements: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Requirements the lead states and the freelancer demonstrably fails, "
+            "e.g. 'Looking for agency, profile is solo freelancer'. "
+            "Empty when match is true."
+        ),
+    )
+    missing_information: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Things the lead never states -- budget, timeline, team size. "
+            "These are for the freelancer to clarify in the pitch, never "
+            "reasons to reject."
+        ),
+    )
+    reasoning: str = Field(description="One or two sentences explaining the verdict.")
+
+
+class PitchDraft(BaseModel):
+    """A drafted pitch for one matched freelance lead.
+
+    The pitch leads with SPECIFIC PAIN POINTS the client described and the
+    freelancer's PREVIOUS SIMILAR SOLUTIONS -- not generic fluff. The agent
+    never sends; it drafts and identifies where to send.
+    """
+
+    pitch_message: str = Field(
+        description=(
+            "150-300 word pitch referencing the client's actual problem by "
+            "quoting/paraphrasing their post, citing 1-2 specific portfolio "
+            "projects that solved similar problems, stating timeline "
+            "commitment, and suggesting a rate within the profile's range. "
+            "In the freelancer's own voice from writing_voice_samples."
+        )
+    )
+    relevant_portfolio: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Names of specific portfolio projects or GitHub repositories that "
+            "demonstrate the skill this lead needs. The pitch should reference "
+            "these. Never fabricate projects."
+        ),
+    )
+    suggested_rate: str = Field(
+        default="",
+        description="Suggested rate based on the profile's rate floor and the lead's stated budget.",
+    )
+    contact_method: str = Field(
+        default="",
+        description="How to reach the client: 'DM on Reddit', 'Reply on WWR', 'Apply on Contra'.",
+    )

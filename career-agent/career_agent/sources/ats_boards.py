@@ -1,4 +1,4 @@
-"""Fetchers for mid/large-company career portals via their ATS's public board APIs.
+"""Fetchers for company career portals via their ATS's public board APIs.
 
 These are free, public, per-company endpoints -- no scraping, no API key.
 Add a company by finding its board slug (usually visible in its careers page

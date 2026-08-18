@@ -33,8 +33,8 @@ FIELDS = [
     ("min_years_experience", "Years of experience", "int",
      "Your experience, compared against what a posting demands."),
     ("allowed_locations", "Allowed locations", "lines",
-     "One per line. Countries work as well as cities; the model reads the posting "
-     "in full rather than matching text."),
+     "One per line. Recommended: India cities plus Remote. International onsite "
+     "roles require explicit sponsorship and junior/early-career scope."),
     ("remote_only", "Remote only", "bool",
      "When on, on-site postings are dropped before any model call."),
     ("min_salary", "Minimum salary", "int",
@@ -44,7 +44,8 @@ FIELDS = [
      "ISO code. The model converts before comparing, so INR against a USD posting "
      "is handled."),
     ("needs_visa_sponsorship", "Needs visa sponsorship", "bool",
-     "Answer honestly: 'no' asserts you need none, and postings are matched on that."),
+     "Turn on when onsite work outside India requires employer sponsorship. Remote "
+     "roles must still explicitly permit working from India."),
     ("excluded_projects", "Never include these projects", "lines",
      "One per line. The drafter already picks projects by relevance and does it "
      "well; this is your override for the ones it should never pick."),
@@ -118,7 +119,7 @@ def render(profile: CandidateProfile, saved: bool = False, error: str = "") -> s
     return (
         "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-        "<title>Career Agent &mdash; profile</title>"
+        "<title>TalentOS // Careers &mdash; profile</title>"
         f"<style>{_BASE_STYLE}{_STYLE}</style></head><body><div class='wrap'>"
         "<h1>Your profile</h1>"
         '<div class="sub">What the agent reads when judging postings and writing resumes. '

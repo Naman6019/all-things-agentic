@@ -47,10 +47,10 @@ def profile(**overrides) -> CandidateProfile:
     return CandidateProfile(**base)
 
 
-def listing(title: str, remote: bool = False) -> JobListing:
+def listing(title: str, remote: bool = False, location: str = "India", description: str = "") -> JobListing:
     return JobListing(
         job_id=f"test:{title}", source="test", title=title, company="Acme",
-        location="Anywhere", remote=remote, url="", description="",
+        location=location, remote=remote, url="", description=description,
     )
 
 
@@ -152,10 +152,138 @@ class TestPrefilter:
         assert kept == []
         assert reasons[matching.REASON_NOT_REMOTE] == 1
 
-    def test_location_is_left_to_the_model_when_not_remote_only(self, monkeypatch):
-        """Allowed locations are countries; postings name cities. A token compare
-        here would drop good jobs, so the model decides with the full posting."""
+    def test_drops_international_onsite_without_junior_sponsorship(self, monkeypatch):
         monkeypatch.setattr(matching.config, "EXCLUDE_TITLE_KEYWORDS", [])
-        jobs = [listing("Machine Learning Engineer", remote=False)]
-        kept, _ = matching.prefilter(jobs, profile(allowed_locations=["Remote", "India"]))
+        jobs = [listing("Machine Learning Engineer", location="San Francisco, CA")]
+        kept, reasons = matching.prefilter(
+            jobs, profile(allowed_locations=["Remote", "India"], needs_visa_sponsorship=True)
+        )
+        assert kept == []
+        assert reasons[matching.REASON_LOCATION] == 1
+
+    def test_keeps_sponsored_junior_international_onsite(self, monkeypatch):
+        monkeypatch.setattr(matching.config, "EXCLUDE_TITLE_KEYWORDS", [])
+        jobs = [
+            listing(
+                "Junior Machine Learning Engineer",
+                location="London, UK",
+                description="Visa sponsorship is available for this position.",
+            )
+        ]
+        kept, _ = matching.prefilter(
+            jobs, profile(
+                needs_visa_sponsorship=True,
+                location_preferences=[{"location": "London, UK", "work_mode": "onsite"}],
+            )
+        )
         assert len(kept) == 1
+
+    def test_drops_onsite_location_not_selected(self, monkeypatch):
+        monkeypatch.setattr(matching.config, "EXCLUDE_TITLE_KEYWORDS", [])
+        jobs = [listing("Machine Learning Engineer", location="San Francisco, US")]
+        kept, reasons = matching.prefilter(
+            jobs,
+            profile(location_preferences=[{"location": "London, UK", "work_mode": "onsite"}]),
+        )
+        assert kept == []
+        assert reasons[matching.REASON_LOCATION] == 1
+
+    def test_drops_remote_explicitly_limited_to_another_region(self, monkeypatch):
+        monkeypatch.setattr(matching.config, "EXCLUDE_TITLE_KEYWORDS", [])
+        jobs = [listing("Machine Learning Engineer", remote=True, location="Remote - US")]
+        kept, reasons = matching.prefilter(jobs, profile(needs_visa_sponsorship=True))
+        assert kept == []
+        assert reasons[matching.REASON_REMOTE_REGION] == 1
+
+    def test_keeps_remote_region_when_selected(self, monkeypatch):
+        monkeypatch.setattr(matching.config, "EXCLUDE_TITLE_KEYWORDS", [])
+        jobs = [listing("Machine Learning Engineer", remote=True, location="Remote - US")]
+        kept, _ = matching.prefilter(
+            jobs,
+            profile(location_preferences=[{"location": "US", "work_mode": "remote"}]),
+        )
+        assert len(kept) == 1
+
+    @pytest.mark.parametrize("location", ["Dubai, UAE", "Riyadh, Saudi Arabia", "Doha, Qatar"])
+    def test_middle_east_preference_matches_regional_remote_roles(self, monkeypatch, location):
+        monkeypatch.setattr(matching.config, "EXCLUDE_TITLE_KEYWORDS", [])
+        jobs = [listing("Machine Learning Engineer", remote=True, location=location)]
+        kept, _ = matching.prefilter(
+            jobs,
+            profile(location_preferences=[{"location": "Middle East", "work_mode": "remote"}]),
+        )
+        assert len(kept) == 1
+
+    def test_middle_east_onsite_still_requires_sponsorship_evidence(self, monkeypatch):
+        monkeypatch.setattr(matching.config, "EXCLUDE_TITLE_KEYWORDS", [])
+        jobs = [listing(
+            "Junior Machine Learning Engineer",
+            location="Abu Dhabi, UAE",
+            description="Visa sponsorship is available for this position.",
+        )]
+        kept, _ = matching.prefilter(
+            jobs,
+            profile(
+                needs_visa_sponsorship=True,
+                location_preferences=[{"location": "Middle East", "work_mode": "onsite"}],
+            ),
+        )
+        assert len(kept) == 1
+
+    @pytest.mark.parametrize("location", ["Remote", "Remoto", "Anywhere", "Worldwide Remote", "Remote - India"])
+    def test_keeps_global_or_india_remote_for_model_review(self, monkeypatch, location):
+        monkeypatch.setattr(matching.config, "EXCLUDE_TITLE_KEYWORDS", [])
+        jobs = [listing("Machine Learning Engineer", remote=True, location=location)]
+        kept, _ = matching.prefilter(jobs, profile(needs_visa_sponsorship=True))
+        assert len(kept) == 1
+
+    @pytest.mark.parametrize("location", ["Remote", "Remote - India", "Remote (Bengaluru)"])
+    def test_keeps_remote_reachable_from_a_saved_city(self, monkeypatch, location):
+        """Regression: a city preference dropped every remote job it could take.
+
+        "remote india" is neither a substring nor a superstring of "bengaluru
+        india", so comparing the raw label made remote-from-India postings --
+        the exact class this agent exists to find -- look unrelated to an
+        Indian city the candidate had saved.
+        """
+        monkeypatch.setattr(matching.config, "EXCLUDE_TITLE_KEYWORDS", [])
+        jobs = [listing("Machine Learning Engineer", remote=True, location=location)]
+        kept, _ = matching.prefilter(
+            jobs,
+            profile(location_preferences=[{"location": "Bengaluru, India", "work_mode": "both"}]),
+        )
+        assert len(kept) == 1
+
+    def test_region_locked_remote_still_dropped_for_a_city_preference(self, monkeypatch):
+        monkeypatch.setattr(matching.config, "EXCLUDE_TITLE_KEYWORDS", [])
+        jobs = [listing("Machine Learning Engineer", remote=True, location="Remote - US")]
+        kept, reasons = matching.prefilter(
+            jobs,
+            profile(location_preferences=[{"location": "Bengaluru, India", "work_mode": "both"}]),
+        )
+        assert kept == []
+        assert reasons[matching.REASON_REMOTE_REGION] == 1
+
+    def test_onsite_only_preference_still_drops_remote(self, monkeypatch):
+        monkeypatch.setattr(matching.config, "EXCLUDE_TITLE_KEYWORDS", [])
+        jobs = [listing("Machine Learning Engineer", remote=True, location="Remote")]
+        kept, reasons = matching.prefilter(
+            jobs,
+            profile(location_preferences=[{"location": "Kolkata, India", "work_mode": "onsite"}]),
+        )
+        assert kept == []
+        assert reasons[matching.REASON_REMOTE_REGION] == 1
+
+    def test_profile_without_any_saved_scope_filters_nothing_on_location(self, monkeypatch):
+        """No saved scope is no policy. Failing closed blanked out every run."""
+        monkeypatch.setattr(matching.config, "EXCLUDE_TITLE_KEYWORDS", [])
+        jobs = [
+            listing("Machine Learning Engineer", location="Kolkata, India"),
+            listing("Data Engineer", remote=True, location="Remote - US"),
+        ]
+        kept, reasons = matching.prefilter(
+            jobs, profile(allowed_locations=[], location_preferences=[])
+        )
+        assert len(kept) == 2
+        assert matching.REASON_LOCATION not in reasons
+        assert matching.REASON_REMOTE_REGION not in reasons

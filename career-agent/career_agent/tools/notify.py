@@ -15,7 +15,7 @@ from .. import config
 
 
 def _render_digest(matched: list[dict], skipped: list[dict], run_id: str, summary: dict | None = None) -> str:
-    lines = [f"Career Agent digest -- run {run_id}", ""]
+    lines = [f"TalentOS // Careers digest -- run {run_id}", ""]
     lines.append(f"MATCHED ({len(matched)})")
     for a in matched:
         lines.append(f"- {a.get('title')} @ {a.get('company')} -- {a.get('url')}")
@@ -75,7 +75,68 @@ def _send_smtp(body: str, run_id: str) -> None:
         print("SMTP not configured -- printing digest instead:\n", body)
         return
     msg = MIMEText(body)
-    msg["Subject"] = f"Career Agent digest -- run {run_id}"
+    msg["Subject"] = f"TalentOS // Careers digest -- run {run_id}"
+    msg["From"] = user
+    msg["To"] = config.DIGEST_TO_EMAIL
+    with smtplib.SMTP(host, port) as server:
+        server.starttls()
+        server.login(user, password)
+        server.send_message(msg)
+
+
+# --- TalentOS // Studio (Freelance Client Pipeline) ---------------------------
+
+
+def _render_freelance_digest(matched: list[dict], skipped: list[dict], run_id: str, summary: dict | None = None) -> str:
+    lines = [f"TalentOS // Studio digest -- run {run_id}", ""]
+    lines.append(f"MATCHED LEADS ({len(matched)})")
+    for lead in matched:
+        lines.append(f"- {lead.get('title')} -- {lead.get('url')}")
+        if lead.get("budget"):
+            lines.append(f"    budget: {lead['budget']}")
+        if lead.get("timeline"):
+            lines.append(f"    timeline: {lead['timeline']}")
+        if lead.get("contact_method"):
+            lines.append(f"    send via: {lead['contact_method']}")
+        for unknown in lead.get("missing_information") or []:
+            lines.append(f"    clarify: {unknown}")
+        lines.append(f"    pitch saved -- see pitches/{lead.get('lead_id')} in Firestore")
+    lines.append("")
+    lines.append(f"SKIPPED LEADS ({len(skipped)})")
+    for lead in skipped:
+        reasons = ", ".join(lead.get("unmet_requirements", [])) or lead.get("reasoning", "no reason recorded")
+        lines.append(f"- {lead.get('title')}: {reasons}")
+        for unknown in lead.get("missing_information") or []:
+            lines.append(f"    (not stated in lead: {unknown})")
+
+    if summary:
+        lines.append("")
+        lines.append("THIS RUN")
+        lines.append(f"- {summary.get('evaluated', 0)} leads evaluated")
+        cost = summary.get("cost_usd")
+        if cost is not None:
+            lines.append(f"- estimated cost: ${cost}")
+    return "\n".join(lines)
+
+
+def send_freelance_digest_email(matched: list[dict], skipped: list[dict], run_id: str, summary: dict | None = None) -> None:
+    body = _render_freelance_digest(matched, skipped, run_id, summary)
+    if not config.DIGEST_TO_EMAIL:
+        print("DIGEST_TO_EMAIL not configured -- printing freelance digest instead:\n", body)
+        return
+    _send_freelance_smtp(body, run_id)
+
+
+def _send_freelance_smtp(body: str, run_id: str) -> None:
+    host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
+    port = int(os.environ.get("SMTP_PORT", "587"))
+    user = os.environ.get("SMTP_USER", config.GMAIL_SENDER)
+    password = os.environ.get("SMTP_PASSWORD", "")
+    if not (user and password):
+        print("SMTP not configured -- printing freelance digest instead:\n", body)
+        return
+    msg = MIMEText(body)
+    msg["Subject"] = f"TalentOS // Studio digest -- run {run_id}"
     msg["From"] = user
     msg["To"] = config.DIGEST_TO_EMAIL
     with smtplib.SMTP(host, port) as server:
