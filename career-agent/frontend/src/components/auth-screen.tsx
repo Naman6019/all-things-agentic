@@ -7,7 +7,7 @@ import {
   signInWithEmailAndPassword,
   signInWithPopup,
 } from "firebase/auth";
-import { ArrowLeft, Check, Eye, EyeOff, Search, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Eye, EyeOff, Lock, Sparkles, ShieldCheck, Cpu, ArrowRight } from "lucide-react";
 import { FormEvent, useState } from "react";
 import { auth } from "@/lib/firebase-client";
 import { cn } from "@/lib/utils";
@@ -29,7 +29,7 @@ function friendlyError(error: unknown) {
 
 function GoogleMark() {
   return (
-    <svg aria-hidden="true" className="size-5" viewBox="0 0 24 24">
+    <svg aria-hidden="true" className="size-5 shrink-0" viewBox="0 0 24 24">
       <path fill="#4285F4" d="M21.6 12.23c0-.71-.06-1.4-.18-2.07H12v3.92h5.38a4.6 4.6 0 0 1-2 3.02v2.54h3.24c1.9-1.75 2.98-4.33 2.98-7.41Z" />
       <path fill="#34A853" d="M12 22c2.7 0 4.98-.9 6.63-2.43l-3.24-2.54c-.9.6-2.05.96-3.39.96-2.61 0-4.83-1.76-5.62-4.13H3.03v2.62A10 10 0 0 0 12 22Z" />
       <path fill="#FBBC05" d="M6.38 13.86A6 6 0 0 1 6.06 12c0-.65.11-1.28.32-1.86V7.52H3.03A10 10 0 0 0 2 12c0 1.61.38 3.14 1.03 4.48l3.35-2.62Z" />
@@ -78,113 +78,154 @@ export function AuthScreen() {
   }
 
   return (
-    <main className="min-h-dvh bg-[#f4f7f6] lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(460px,0.76fr)]">
-      <section className="hidden border-r border-[#dce4e1] bg-[#153b32] px-12 py-10 text-white lg:flex lg:flex-col lg:justify-between">
+    <main className="relative min-h-dvh overflow-hidden bg-[#080c0e] lg:grid lg:grid-cols-[1.1fr_0.9fr]">
+      {/* Background Ambient Glows */}
+      <div className="ambient-glow-careers" />
+      <div className="ambient-glow-studio" />
+
+      {/* Left Column — Brand & Value Showcase */}
+      <section className="relative z-10 hidden flex-col justify-between border-r border-white/5 bg-gradient-to-b from-[#0c1216]/90 via-[#080c0e]/80 to-[#080c0e] p-12 lg:flex xl:p-16">
         <div className="flex items-center gap-3">
-          <div className="grid size-10 place-items-center rounded-xl bg-white text-[#0f6b55]">
-            <Search className="size-5" strokeWidth={2.2} />
+          <div className="grid size-11 place-items-center rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-900/30 border border-emerald-500/30 text-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.2)]">
+            <Sparkles className="size-5" />
           </div>
-          <span className="text-lg font-semibold">TalentOS</span>
+          <div>
+            <span className="font-display text-xl font-bold tracking-tight text-white">TalentOS</span>
+            <span className="ml-2 rounded-full border border-emerald-500/20 bg-emerald-950/40 px-2.5 py-0.5 text-xs font-medium text-emerald-400">
+              An AllStackLabs Product
+            </span>
+          </div>
         </div>
 
-        <div className="max-w-xl py-16">
-          <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/20 px-3 py-1 text-sm text-[#d4e8e2]">
-            <Sparkles className="size-4" /> An AllStackLabs product
-          </p>
-          <h1 className="max-w-lg text-balance text-5xl font-semibold leading-[1.08]">
-            Every promising role, with the evidence to act on it.
+        <div className="my-auto max-w-xl py-12">
+          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3.5 py-1.5 text-xs font-medium text-slate-300 backdrop-blur-md">
+            <Cpu className="size-3.5 text-emerald-400" />
+            Autonomous Opportunity Intelligence
+          </div>
+          
+          <h1 className="font-display text-balance text-4xl font-extrabold leading-[1.12] text-white xl:text-5xl">
+            Dual-stream intelligence for your next career move.
           </h1>
-          <p className="mt-6 max-w-lg text-pretty text-lg leading-8 text-[#c8ddd7]">
-            Review matched jobs, understand why they fit, and move from discovery to a tailored application without losing the human decision.
+          
+          <p className="mt-6 text-pretty text-base leading-relaxed text-slate-400 xl:text-lg">
+            Autonomous discovery across public ATS and freelance boards. 3-state qualification reasoning and print-ready tailored materials with strict human-in-the-loop approval.
           </p>
 
-          <div className="mt-10 grid max-w-lg gap-4 sm:grid-cols-3">
-            {["Source-aware discovery", "Evidence-led matching", "Human-controlled apply"].map((item) => (
-              <div key={item} className="border-t border-white/20 pt-4 text-sm leading-6 text-[#d9e9e5]">
-                <Check className="mb-3 size-4 text-[#88c7b6]" />
-                {item}
-              </div>
-            ))}
+          <div className="mt-10 grid gap-4 sm:grid-cols-3">
+            <div className="glass-card rounded-2xl p-4 border border-white/10">
+              <CheckCircle2 className="mb-2 size-5 text-emerald-400" />
+              <div className="font-display text-sm font-semibold text-white">TalentOS // Careers</div>
+              <p className="mt-1 text-xs leading-relaxed text-slate-400">ATS discovery & print-ready resume tailoring.</p>
+            </div>
+            
+            <div className="glass-card rounded-2xl p-4 border border-white/10">
+              <CheckCircle2 className="mb-2 size-5 text-amber-400" />
+              <div className="font-display text-sm font-semibold text-white">TalentOS // Studio</div>
+              <p className="mt-1 text-xs leading-relaxed text-slate-400">Gig monitoring & 3-paragraph pitch drafting.</p>
+            </div>
+
+            <div className="glass-card rounded-2xl p-4 border border-white/10">
+              <CheckCircle2 className="mb-2 size-5 text-sky-400" />
+              <div className="font-display text-sm font-semibold text-white">Gemini 3.6 Flash</div>
+              <p className="mt-1 text-xs leading-relaxed text-slate-400">Grounded reasoning on Google Cloud Vertex AI.</p>
+            </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 text-sm text-[#b8d0ca]">
-          <ShieldCheck className="size-4" /> Your agent drafts. You decide and apply.
+        <div className="flex items-center gap-2 text-xs text-slate-500">
+          <ShieldCheck className="size-4 text-emerald-400" />
+          <span>Anti-Automation Safe: The agent evaluates and drafts; you review and submit.</span>
         </div>
       </section>
 
-      <section className="flex min-h-dvh items-center justify-center px-5 py-10 sm:px-10">
-        <div className="w-full max-w-md">
-          <div className="mb-10 flex items-center gap-3 lg:hidden">
-            <div className="grid size-10 place-items-center rounded-xl bg-[#153b32] text-white">
-              <Search className="size-5" />
+      {/* Right Column — Auth Terminal Form */}
+      <section className="relative z-10 flex min-h-dvh items-center justify-center p-6 sm:p-12">
+        <div className="glass-panel w-full max-w-md rounded-3xl p-8 shadow-2xl sm:p-10">
+          <div className="mb-8 flex items-center justify-between lg:hidden">
+            <div className="flex items-center gap-2.5">
+              <div className="grid size-9 place-items-center rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                <Sparkles className="size-4" />
+              </div>
+              <span className="font-display text-lg font-bold text-white">TalentOS</span>
             </div>
-            <span className="text-lg font-semibold">TalentOS</span>
+            <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-slate-400">
+              Private Beta
+            </span>
           </div>
 
           {mode === "reset" && (
             <button
               type="button"
               onClick={() => setMode("sign-in")}
-              className="mb-5 inline-flex items-center gap-2 text-sm font-medium text-[#53635e] hover:text-[#17211e]"
+              className="mb-6 inline-flex items-center gap-2 text-xs font-medium text-slate-400 hover:text-white transition"
             >
               <ArrowLeft className="size-4" /> Back to sign in
             </button>
           )}
 
-          <h2 className="text-balance text-3xl font-semibold text-[#17211e]">
-            {mode === "sign-in" && "Welcome back"}
-            {mode === "sign-up" && "Create your account"}
-            {mode === "reset" && "Reset your password"}
-          </h2>
-          <p className="mt-2 text-pretty leading-7 text-[#64726d]">
-            {mode === "sign-in" && "Sign in to review your latest matches and application drafts."}
-            {mode === "sign-up" && "Use Google or create an account with your personal email."}
-            {mode === "reset" && "We’ll email you a secure link to choose a new password."}
-          </p>
+          <div className="space-y-2">
+            <h2 className="font-display text-2xl font-bold tracking-tight text-white sm:text-3xl">
+              {mode === "sign-in" && "Sign in to TalentOS"}
+              {mode === "sign-up" && "Create your workspace"}
+              {mode === "reset" && "Reset your password"}
+            </h2>
+            <p className="text-sm text-slate-400">
+              {mode === "sign-in" && "Review live opportunities, tailored resumes, and client pitches."}
+              {mode === "sign-up" && "Join the private beta with Google or your email address."}
+              {mode === "reset" && "Enter your email to receive a secure recovery link."}
+            </p>
+          </div>
 
           {mode !== "reset" && (
             <button
               type="button"
               disabled={busy}
               onClick={() => void withFeedback(() => signInWithPopup(auth, new GoogleAuthProvider()))}
-              className="mt-8 flex h-12 w-full items-center justify-center gap-3 rounded-xl border border-[#cfd9d5] bg-white px-4 font-medium text-[#25312d] shadow-sm hover:bg-[#f9fbfa] disabled:cursor-not-allowed disabled:opacity-60"
+              className="group mt-8 flex h-12 w-full items-center justify-center gap-3 rounded-xl border border-white/15 bg-white/5 px-4 text-sm font-semibold text-white shadow-lg transition-all hover:bg-white/10 hover:border-white/25 active:scale-[0.99] disabled:opacity-50"
             >
-              <GoogleMark /> Continue with Google
+              <GoogleMark />
+              <span>Continue with Google</span>
+              <ArrowRight className="size-4 text-slate-500 transition-transform group-hover:translate-x-0.5 group-hover:text-white" />
             </button>
           )}
 
           {mode !== "reset" && (
-            <div className="my-6 flex items-center gap-4 text-xs text-[#7b8984]">
-              <span className="h-px flex-1 bg-[#dce4e1]" /> OR CONTINUE WITH EMAIL <span className="h-px flex-1 bg-[#dce4e1]" />
+            <div className="my-6 flex items-center gap-4 text-xs font-medium uppercase tracking-wider text-slate-500">
+              <span className="h-px flex-1 bg-white/10" />
+              <span>or email</span>
+              <span className="h-px flex-1 bg-white/10" />
             </div>
           )}
 
-          <form onSubmit={submit} className={cn("space-y-5", mode === "reset" && "mt-8")}>
-            <label className="block">
-              <span className="mb-2 block text-sm font-medium text-[#25312d]">Email address</span>
+          <form onSubmit={submit} className={cn("space-y-4", mode === "reset" && "mt-6")}>
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-slate-300">Email Address</label>
               <input
                 required
                 type="email"
                 autoComplete="email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
-                placeholder="you@example.com"
-                className="h-12 w-full rounded-xl border border-[#cfd9d5] bg-white px-4 text-[#17211e] shadow-sm placeholder:text-[#98a49f]"
+                placeholder="naman@allstacklabs.com"
+                className="h-11 w-full rounded-xl border border-white/10 bg-[#0d1317] px-3.5 text-sm text-white placeholder:text-slate-600 focus:border-emerald-500/50 focus:bg-[#11181d] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
               />
-            </label>
+            </div>
 
             {mode !== "reset" && (
-              <label className="block">
-                <span className="mb-2 flex items-center justify-between text-sm font-medium text-[#25312d]">
-                  Password
+              <div>
+                <div className="mb-1.5 flex items-center justify-between text-xs font-medium text-slate-300">
+                  <span>Password</span>
                   {mode === "sign-in" && (
-                    <button type="button" onClick={() => setMode("reset")} className="font-medium text-[#0f6b55] hover:text-[#0a4f3f]">
+                    <button
+                      type="button"
+                      onClick={() => setMode("reset")}
+                      className="text-emerald-400 transition hover:text-emerald-300 hover:underline"
+                    >
                       Forgot password?
                     </button>
                   )}
-                </span>
-                <span className="relative block">
+                </div>
+                <div className="relative">
                   <input
                     required
                     minLength={6}
@@ -192,44 +233,61 @@ export function AuthScreen() {
                     autoComplete={mode === "sign-up" ? "new-password" : "current-password"}
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
-                    placeholder="At least 6 characters"
-                    className="h-12 w-full rounded-xl border border-[#cfd9d5] bg-white px-4 pr-12 text-[#17211e] shadow-sm placeholder:text-[#98a49f]"
+                    placeholder="••••••••"
+                    className="h-11 w-full rounded-xl border border-white/10 bg-[#0d1317] px-3.5 pr-11 text-sm text-white placeholder:text-slate-600 focus:border-emerald-500/50 focus:bg-[#11181d] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                   />
                   <button
                     type="button"
                     aria-label={showPassword ? "Hide password" : "Show password"}
                     onClick={() => setShowPassword((value) => !value)}
-                    className="absolute inset-y-0 right-0 grid w-12 place-items-center text-[#6c7a75] hover:text-[#25312d]"
+                    className="absolute inset-y-0 right-0 grid w-11 place-items-center text-slate-500 hover:text-slate-300"
                   >
-                    {showPassword ? <EyeOff className="size-5" /> : <Eye className="size-5" />}
+                    {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                   </button>
-                </span>
-              </label>
+                </div>
+              </div>
             )}
 
-            {error && <p role="alert" className="rounded-lg border border-[#efc7c2] bg-[#fff5f3] px-3 py-2 text-sm text-[#8d362d]">{error}</p>}
-            {notice && <p role="status" className="rounded-lg border border-[#bcded3] bg-[#f1faf7] px-3 py-2 text-sm text-[#0a5d49]">{notice}</p>}
+            {error && (
+              <div role="alert" className="rounded-xl border border-rose-500/30 bg-rose-950/40 p-3 text-xs leading-relaxed text-rose-300">
+                {error}
+              </div>
+            )}
+            
+            {notice && (
+              <div role="status" className="rounded-xl border border-emerald-500/30 bg-emerald-950/40 p-3 text-xs leading-relaxed text-emerald-300">
+                {notice}
+              </div>
+            )}
 
             <button
               type="submit"
               disabled={busy}
-              className="h-12 w-full rounded-xl bg-[#0f6b55] px-4 font-semibold text-white shadow-sm hover:bg-[#0a5947] disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-2 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 font-display text-sm font-semibold text-white shadow-[0_0_20px_rgba(16,185,129,0.25)] transition hover:from-emerald-500 hover:to-teal-500 active:scale-[0.99] disabled:opacity-60"
             >
-              {busy ? "Please wait…" : mode === "sign-in" ? "Sign in" : mode === "sign-up" ? "Create account" : "Send reset link"}
+              {busy ? (
+                <span className="size-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+              ) : mode === "sign-in" ? (
+                "Sign in to Workspace"
+              ) : mode === "sign-up" ? (
+                "Create Account"
+              ) : (
+                "Send Password Reset Link"
+              )}
             </button>
           </form>
 
           {mode !== "reset" && (
-            <p className="mt-7 text-center text-sm text-[#64726d]">
+            <div className="mt-8 border-t border-white/5 pt-6 text-center text-xs text-slate-400">
               {mode === "sign-in" ? "New to TalentOS?" : "Already have an account?"}{" "}
               <button
                 type="button"
                 onClick={() => setMode(mode === "sign-in" ? "sign-up" : "sign-in")}
-                className="font-semibold text-[#0f6b55] hover:text-[#0a4f3f]"
+                className="font-semibold text-emerald-400 transition hover:text-emerald-300"
               >
                 {mode === "sign-in" ? "Create an account" : "Sign in"}
               </button>
-            </p>
+            </div>
           )}
         </div>
       </section>

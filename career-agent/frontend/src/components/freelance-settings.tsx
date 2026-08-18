@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Check, Settings } from "lucide-react";
+import { ArrowLeft, Check, Save, Settings, Sliders, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
@@ -59,6 +59,7 @@ export function FreelanceSettingsPage() {
       });
       if (!response.ok) throw new Error("Could not save freelance profile.");
       setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save.");
     } finally {
@@ -68,58 +69,107 @@ export function FreelanceSettingsPage() {
 
   if (loading) {
     return (
-      <main className="grid min-h-dvh place-items-center bg-[#f5f7f7]">
-        <span className="size-4 rounded-full border-2 border-[#b5c9c2] border-t-[#8b423a]" />
-      </main>
+      <div className="flex min-h-dvh items-center justify-center bg-[#080c0e]">
+        <span className="size-5 animate-spin rounded-full border-2 border-amber-500/30 border-t-amber-400" />
+      </div>
     );
   }
 
   return (
-    <div className="min-h-dvh bg-[#f5f7f7]">
-      <header className="border-b border-[#dce4e1] bg-white">
-        <div className="mx-auto flex h-16 max-w-[800px] items-center gap-3 px-4 sm:px-6 lg:px-8">
-          <Link href="/freelance" className="grid size-9 place-items-center rounded-lg text-[#53635e] hover:bg-[#f0f3f2]">
-            <ArrowLeft className="size-4" />
+    <div className="relative min-h-dvh overflow-x-hidden bg-[#080c0e] text-slate-100 pb-20">
+      <div className="ambient-glow-studio" />
+
+      {/* Header */}
+      <header className="sticky top-0 z-40 border-b border-white/5 bg-[#080c0e]/85 backdrop-blur-xl">
+        <div className="mx-auto flex h-16 max-w-4xl items-center justify-between px-4 sm:px-6">
+          <Link
+            href="/freelance"
+            className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:bg-white/10 hover:text-white"
+          >
+            <ArrowLeft className="size-3.5" />
+            <span>Back to Studio</span>
           </Link>
-          <Settings className="size-4 text-[#8b423a]" />
-          <span className="font-semibold text-[#17211e]">Freelance Settings</span>
+          <span className="font-display text-sm font-bold text-white">Freelance Services Profile</span>
+          <button
+            onClick={submit}
+            disabled={saving}
+            className="flex items-center gap-1.5 rounded-xl bg-amber-500 px-4 py-1.5 text-xs font-semibold text-[#080c0e] shadow-[0_0_15px_rgba(245,158,11,0.3)] transition hover:bg-amber-400 active:scale-[0.98] disabled:opacity-50"
+          >
+            <Save className="size-3.5" />
+            <span>{saving ? "Saving…" : "Save"}</span>
+          </button>
         </div>
       </header>
 
-      <main className="mx-auto max-w-[800px] px-4 py-8 sm:px-6 lg:px-8">
-        <p className="text-sm text-[#64726d]">These fields configure the TalentOS // Studio agent. Your shared profile (name, skills, portfolio, GitHub) is already used by both agents.</p>
+      {/* Main Form */}
+      <main className="relative z-10 mx-auto max-w-4xl px-4 py-8 sm:px-6">
+        <div className="mb-8">
+          <h1 className="font-display text-2xl font-bold text-white sm:text-3xl">Freelance Agent Configuration</h1>
+          <p className="mt-1 text-xs text-slate-400">
+            These parameters drive the TalentOS // Studio freelance evaluator and pitch drafter agents.
+          </p>
+        </div>
 
-        <form onSubmit={submit} className="mt-8 space-y-6">
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-semibold text-[#25312d]">Freelance niche</span>
-            <input value={niche} onChange={(e) => setNiche(e.target.value)} placeholder="e.g. Web Development, Frontend, Full-stack" className="h-11 w-full rounded-xl border border-[#c8d8d3] bg-white px-3 text-sm" />
-            <span className="mt-1 block text-xs text-[#7a8782]">Drives which leads the pre-filter admits.</span>
-          </label>
+        {saved && (
+          <div className="mb-6 rounded-2xl border border-amber-500/30 bg-amber-950/40 p-4 text-xs text-amber-300">
+            ✓ Freelance profile saved to Firestore. Subsequent gig monitoring runs will evaluate against these services.
+          </div>
+        )}
 
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-semibold text-[#25312d]">Availability</span>
-            <input value={availability} onChange={(e) => setAvailability(e.target.value)} placeholder="e.g. Available now, 2 weeks notice" className="h-11 w-full rounded-xl border border-[#c8d8d3] bg-white px-3 text-sm" />
-            <span className="mt-1 block text-xs text-[#7a8782]">Lets the agent reject leads with impossible timelines.</span>
-          </label>
+        {error && (
+          <div className="mb-6 rounded-2xl border border-rose-500/30 bg-rose-950/40 p-4 text-xs text-rose-300">
+            {error}
+          </div>
+        )}
 
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-semibold text-[#25312d]">Services offered (one per line)</span>
-            <textarea value={services} onChange={(e) => setServices(e.target.value)} rows={5} placeholder={"Landing pages\nReact apps\nAPI integration\nShopify themes"} className="w-full resize-y rounded-xl border border-[#c8d8d3] bg-white px-3 py-3 text-sm" />
-            <span className="mt-1 block text-xs text-[#7a8782]">The evaluator matches these against lead requirements.</span>
-          </label>
+        <form onSubmit={submit} className="space-y-6">
+          <div className="glass-panel rounded-3xl p-6 border border-white/10 space-y-5">
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-slate-400 uppercase">Freelance Niche / Domain</label>
+              <input
+                value={niche}
+                onChange={(e) => setNiche(e.target.value)}
+                placeholder="e.g. Full-Stack Web Development, Next.js Apps, AI Integrations"
+                className="h-11 w-full rounded-xl border border-white/10 bg-[#0d1317] px-3.5 text-xs text-white placeholder:text-slate-600 focus:border-amber-500/50 focus:outline-none"
+              />
+              <span className="mt-1 block text-[11px] text-slate-500">Drives which public gigs and feeds are admitted by the pre-filter.</span>
+            </div>
 
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-semibold text-[#25312d]">Portfolio summary (short pitch)</span>
-            <textarea value={summary} onChange={(e) => setSummary(e.target.value)} rows={4} placeholder="e.g. I build fast, accessible React apps for startups. 3+ years, 20+ projects shipped." className="w-full resize-y rounded-xl border border-[#c8d8d3] bg-white px-3 py-3 text-sm" />
-            <span className="mt-1 block text-xs text-[#7a8782]">The pitcher uses this to open pitches.</span>
-          </label>
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-slate-400 uppercase">Availability & Lead Time</label>
+              <input
+                value={availability}
+                onChange={(e) => setAvailability(e.target.value)}
+                placeholder="e.g. Available immediately, 20 hrs/week, 2 weeks notice"
+                className="h-11 w-full rounded-xl border border-white/10 bg-[#0d1317] px-3.5 text-xs text-white placeholder:text-slate-600 focus:border-amber-500/50 focus:outline-none"
+              />
+              <span className="mt-1 block text-[11px] text-slate-500">Allows Gemini to evaluate client timeline feasibility.</span>
+            </div>
 
-          {error && <p role="alert" className="rounded-lg border border-[#efc7c2] bg-[#fff5f3] px-3 py-2 text-sm text-[#8d362d]">{error}</p>}
-          {saved && <p role="status" className="inline-flex items-center gap-2 rounded-lg border border-[#bcded3] bg-[#f1faf7] px-3 py-2 text-sm text-[#0a5d49]"><Check className="size-4" /> Freelance profile saved.</p>}
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-slate-400 uppercase">Services Offered (One per line)</label>
+              <textarea
+                value={services}
+                onChange={(e) => setServices(e.target.value)}
+                rows={5}
+                placeholder={"Full-stack Next.js web applications\nAPI integrations & LLM pipelines\nMobile responsive UI development\nPerformance optimization & SEO"}
+                className="w-full resize-y rounded-xl border border-white/10 bg-[#0d1317] p-3 text-xs leading-relaxed text-slate-200 placeholder:text-slate-600 focus:border-amber-500/50 focus:outline-none"
+              />
+              <span className="mt-1 block text-[11px] text-slate-500">The freelance evaluator checks client requirements against this service list.</span>
+            </div>
 
-          <button type="submit" disabled={saving} className="inline-flex h-11 items-center gap-2 rounded-xl bg-[#8b423a] px-5 text-sm font-semibold text-white disabled:opacity-60">
-            {saving ? "Saving…" : "Save freelance profile"}
-          </button>
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-slate-400 uppercase">Portfolio Summary / Opening Hook</label>
+              <textarea
+                value={summary}
+                onChange={(e) => setSummary(e.target.value)}
+                rows={4}
+                placeholder="e.g. I build high-performance React & Python web applications. Shipped 15+ production systems with 99.9% uptime."
+                className="w-full resize-y rounded-xl border border-white/10 bg-[#0d1317] p-3 text-xs leading-relaxed text-slate-200 placeholder:text-slate-600 focus:border-amber-500/50 focus:outline-none"
+              />
+              <span className="mt-1 block text-[11px] text-slate-500">The pitcher agent incorporates this track record into direct client outreach messages.</span>
+            </div>
+          </div>
         </form>
       </main>
     </div>

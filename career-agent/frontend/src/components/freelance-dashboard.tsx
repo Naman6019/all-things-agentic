@@ -1,24 +1,22 @@
 "use client";
 
 import {
-  ArrowUpRight,
   BriefcaseBusiness,
   Check,
   CheckCircle2,
-  ChevronDown,
+  ChevronRight,
   CircleAlert,
-  Clock3,
-  FileText,
+  DollarSign,
+  ExternalLink,
   Inbox,
-  Link2,
   LogOut,
+  Plus,
   Search,
   Send,
-  Settings,
-  ShieldCheck,
+  Sliders,
   Sparkles,
-  UserRound,
-  X,
+  User,
+  X
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -36,9 +34,9 @@ const matchRank: Record<NonNullable<Lead["match_strength"]>, number> = {
 };
 
 const tabs: { value: string; label: string; icon: typeof Inbox }[] = [
-  { value: "matched", label: "To pitch", icon: Inbox },
-  { value: "sent", label: "Sent", icon: CheckCircle2 },
-  { value: "skipped", label: "Skipped", icon: X },
+  { value: "matched", label: "To Pitch", icon: Inbox },
+  { value: "sent", label: "Pitches Sent", icon: CheckCircle2 },
+  { value: "skipped", label: "Skipped Gigs", icon: X },
 ];
 
 async function responseError(response: Response) {
@@ -57,27 +55,35 @@ function formatDate(value?: string) {
   return new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(date);
 }
 
-function sourceName(source?: string) {
-  if (!source) return "Freelance board";
-  const names: Record<string, string> = { rforhire: "r/forhire", wwr: "WWR", contra: "Contra", peerlist: "Peerlist" };
-  return names[source] || source.charAt(0).toUpperCase() + source.slice(1);
+function sourceBadge(source?: string) {
+  if (!source) return { label: "Freelance Feed", className: "border-white/10 bg-white/5 text-slate-400" };
+  const s = source.toLowerCase();
+  if (s.includes("reddit") || s.includes("rforhire")) {
+    return { label: "r/forhire", className: "border-orange-500/30 bg-orange-950/40 text-orange-400" };
+  }
+  if (s.includes("wwr") || s.includes("weworkremotely")) {
+    return { label: "We Work Remotely", className: "border-amber-500/30 bg-amber-950/40 text-amber-300" };
+  }
+  if (s.includes("contra")) {
+    return { label: "Contra Feed", className: "border-yellow-500/30 bg-yellow-950/40 text-yellow-300" };
+  }
+  return { label: source.toUpperCase(), className: "border-white/10 bg-white/5 text-slate-300" };
 }
 
-function matchLabel(lead: Lead) {
-  if (lead.status === "skipped") return "Not selected";
-  if (lead.status === "sent") return "Pitch sent";
-  if (lead.match_strength === "strong") return "Strong match";
-  if (lead.match_strength === "medium") return "Medium match";
-  if (lead.match_strength === "weak") return "Weak match";
-  return "Match";
-}
-
-function matchBadgeClass(lead: Lead) {
-  if (lead.status === "skipped") return "bg-[#f4eceb] text-[#8b423a]";
-  if (lead.status === "sent") return "bg-[#eef3f1] text-[#53635e]";
-  if (lead.match_strength === "medium") return "bg-[#f7f1e5] text-[#805f20]";
-  if (lead.match_strength === "weak") return "bg-[#f3eeee] text-[#76504b]";
-  return "bg-[#e8f3ef] text-[#0f6b55]";
+function matchBadge(lead: Lead) {
+  if (lead.status === "skipped") {
+    return { label: "Scope Mismatch", className: "border-rose-500/30 bg-rose-950/40 text-rose-300" };
+  }
+  if (lead.status === "sent") {
+    return { label: "Pitch Sent", className: "border-slate-600/30 bg-slate-800/40 text-slate-300" };
+  }
+  if (lead.match_strength === "strong") {
+    return { label: "High Conversion Fit", className: "border-amber-500/40 bg-amber-950/50 text-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.2)]" };
+  }
+  if (lead.match_strength === "medium") {
+    return { label: "Viable Fit", className: "border-yellow-500/30 bg-yellow-950/40 text-yellow-300" };
+  }
+  return { label: "Low Fit", className: "border-slate-700/30 bg-slate-900/40 text-slate-400" };
 }
 
 function leadTimestamp(lead: Lead) {
@@ -98,256 +104,383 @@ function sortLeads(leads: Lead[], sort: SortOption) {
   });
 }
 
-function DashboardSkeleton() {
-  return (
-    <div className="space-y-5" aria-label="Loading leads">
-      {[0, 1, 2].map((item) => (
-        <div key={item} className="rounded-2xl border border-[#dce4e1] bg-white p-6">
-          <div className="h-5 w-2/5 rounded bg-[#e9eeec]" />
-          <div className="mt-3 h-4 w-1/4 rounded bg-[#eef2f1]" />
-          <div className="mt-7 h-4 w-full rounded bg-[#eef2f1]" />
-          <div className="mt-2 h-4 w-4/5 rounded bg-[#eef2f1]" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function Metric({ label, value, detail, icon: Icon }: { label: string; value: number; detail: string; icon: typeof Inbox }) {
-  return (
-    <div className="rounded-2xl border border-[#dce4e1] bg-white p-5 shadow-sm">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-sm font-medium text-[#67756f]">{label}</p>
-          <p className="mt-2 text-3xl font-semibold tabular-nums text-[#17211e]">{value}</p>
-        </div>
-        <div className="grid size-10 place-items-center rounded-xl bg-[#f4eceb] text-[#8b423a]">
-          <Icon className="size-5" />
-        </div>
-      </div>
-      <p className="mt-3 text-xs text-[#7a8782]">{detail}</p>
-    </div>
-  );
-}
-
-function LeadCard({ lead, onSent, busy }: { lead: Lead; onSent: (lead: Lead) => void; busy: boolean }) {
-  const missing = lead.missing_information ?? [];
-  const unmet = lead.unmet_requirements ?? [];
-  const isSkipped = lead.status === "skipped";
-  const effectivePitch = lead.edited_pitch_message ?? lead.pitch_message ?? "";
-
-  return (
-    <article className="rounded-2xl border border-[#dce4e1] bg-white p-5 shadow-sm sm:p-6">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold", matchBadgeClass(lead))}>
-              {matchLabel(lead)}
-            </span>
-            <span className="text-xs text-[#7a8782]">{lead.posted_at ? `Posted ${formatDate(lead.posted_at)}` : formatDate(lead.materials_created_at || lead.evaluated_at)}</span>
-          </div>
-          <h3 className="mt-3 text-balance text-xl font-semibold text-[#17211e]">{lead.title || "Untitled gig"}</h3>
-          <p className="mt-1 text-pretty font-medium text-[#53635e]">{lead.client || "Client not listed"}</p>
-        </div>
-        {lead.url && (
-          <a
-            href={lead.url}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-[#cfd9d5] bg-white px-4 text-sm font-semibold text-[#25312d] hover:bg-[#f7f9f8]"
-          >
-            View lead <ArrowUpRight className="size-4" />
-          </a>
-        )}
-      </div>
-
-      <div className="mt-5 flex flex-wrap gap-2 text-xs text-[#5e6d67]">
-        {lead.budget && <span className="rounded-lg bg-[#f2f5f4] px-2.5 py-1.5">Budget: {lead.budget}</span>}
-        {lead.timeline && <span className="rounded-lg bg-[#f2f5f4] px-2.5 py-1.5">Timeline: {lead.timeline}</span>}
-        {lead.source && <span className="inline-flex items-center gap-1.5 rounded-lg bg-[#f2f5f4] px-2.5 py-1.5"><Link2 className="size-3.5" />{sourceName(lead.source)}</span>}
-        {lead.suggested_rate && <span className="rounded-lg bg-[#e8f3ef] px-2.5 py-1.5 font-semibold text-[#0f6b55]">Rate: {lead.suggested_rate}</span>}
-      </div>
-
-      {lead.reasoning && (
-        <div className="mt-5 border-l-2 border-[#77ad9d] pl-4">
-          <p className="text-xs font-semibold text-[#0f6b55]">WHY THIS {isSkipped ? "WAS SKIPPED" : "MATCHES"}</p>
-          <p className="mt-1 text-pretty text-sm leading-6 text-[#42504b]">{lead.reasoning}</p>
-        </div>
-      )}
-
-      {(missing.length > 0 || unmet.length > 0) && (
-        <details className="group mt-5 rounded-xl border border-[#e0e6e4] bg-[#fafbfb]">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium text-[#42504b]">
-            <span className="inline-flex items-center gap-2"><CircleAlert className="size-4 text-[#9b7129]" />{isSkipped ? "Requirements to review" : "Information to clarify"}</span>
-            <ChevronDown className="size-4 group-open:rotate-180" />
-          </summary>
-          <ul className="space-y-2 border-t border-[#e0e6e4] px-4 py-3 text-sm leading-6 text-[#5e6d67]">
-            {[...unmet, ...missing].map((item) => <li key={item} className="flex gap-2"><span aria-hidden="true">•</span><span>{item}</span></li>)}
-          </ul>
-        </details>
-      )}
-
-      {!isSkipped && effectivePitch && (
-        <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-[#e6ebe9] pt-5">
-          <a href={`/freelance/pitch?lead_id=${encodeURIComponent(lead.lead_id)}`} target="_blank" rel="noopener noreferrer" className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#cfd9d5] px-4 text-sm font-semibold text-[#42504b] hover:bg-[#f7f9f8]">
-            <FileText className="size-4" /> View pitch {lead.pitch_edited_at && <span className="rounded-full bg-[#e8f3ef] px-2 py-0.5 text-xs text-[#0f6b55]">Edited</span>}
-          </a>
-          {lead.contact_method && (
-            <span className="inline-flex items-center gap-1.5 text-xs text-[#7a8782]">
-              <Send className="size-3.5" /> Send via: {lead.contact_method}
-            </span>
-          )}
-          {lead.status !== "sent" && (
-            <button disabled={busy} type="button" onClick={() => onSent(lead)} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#8b423a] px-4 text-sm font-semibold text-white hover:bg-[#7a3830] disabled:opacity-60">
-              <Check className="size-4" /> Mark sent
-            </button>
-          )}
-        </div>
-      )}
-    </article>
-  );
-}
-
 export function FreelanceDashboard() {
   const { user, logout } = useAuth();
-  const [active, setActive] = useState("matched");
-  const [datasets, setDatasets] = useState<Record<string, Lead[]>>({ matched: [], sent: [], skipped: [] });
+  const [activeTab, setActiveTab] = useState<string>("matched");
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [counts, setCounts] = useState<{ matched: number; sent: number; skipped: number }>({
+    matched: 0,
+    sent: 0,
+    skipped: 0,
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortOption>("newest");
-  const [busyLead, setBusyLead] = useState("");
-  const [notice, setNotice] = useState("");
+  const [expandedLeadId, setExpandedLeadId] = useState<string | null>(null);
 
-  const request = useCallback(async (path: string, init: RequestInit = {}) => {
-    if (!user) throw new Error("Sign in is required.");
-    const token = await user.getIdToken();
-    const headers = new Headers(init.headers);
-    headers.set("authorization", `Bearer ${token}`);
-    return fetch(path, { ...init, headers });
-  }, [user]);
-
-  const load = useCallback(async () => {
-    setLoading(true); setError("");
+  const fetchLeads = useCallback(async (tab: string) => {
+    setLoading(true);
+    setError("");
     try {
-      const responses = await Promise.all(tabs.map(({ value }) => request(`/api/leads?status=${value}`)));
-      const firstFailure = responses.find((response) => !response.ok);
-      if (firstFailure) throw new Error(await responseError(firstFailure));
-      const data = (await Promise.all(responses.map((response) => response.json()))) as LeadsResponse[];
-      setDatasets({ matched: data[0].leads, sent: data[1].leads, skipped: data[2].leads });
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not load your freelance leads.");
+      const res = await fetch(`/api/leads?status=${tab}`);
+      if (!res.ok) throw new Error(await responseError(res));
+      const data = (await res.json()) as LeadsResponse;
+      const loadedLeads = data.leads || [];
+      setLeads(loadedLeads);
+      setCounts((prev: any) => ({
+        ...prev,
+        [tab]: loadedLeads.length,
+      }));
+    } catch (err: any) {
+      setError(err.message || "Failed to load freelance leads.");
     } finally {
       setLoading(false);
     }
-  }, [request]);
+  }, []);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void load(), 0);
-    return () => window.clearTimeout(timer);
-  }, [load]);
+    void fetchLeads(activeTab);
+  }, [activeTab, fetchLeads]);
 
-  const visibleLeads = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    const filtered = query
-      ? datasets[active].filter((lead) =>
-          `${lead.title} ${lead.client} ${lead.budget || ""}`.toLowerCase().includes(query),
-        )
-      : datasets[active];
-    return sortLeads(filtered, sort);
-  }, [active, datasets, search, sort]);
-
-  async function markSent(lead: Lead) {
-    setBusyLead(lead.lead_id); setError("");
+  async function updateStatus(leadId: string, status: string) {
     try {
-      const response = await request("/api/leads/status", { method: "PUT", headers: { "content-type": "application/x-www-form-urlencoded" }, body: `lead_id=${encodeURIComponent(lead.lead_id)}&status=sent` });
-      if (!response.ok) throw new Error(await responseError(response));
-      setDatasets((current) => ({ ...current, matched: current.matched.filter((item) => item.lead_id !== lead.lead_id), sent: [{ ...lead, status: "sent" }, ...current.sent] }));
-      setNotice("Pitch moved to Sent.");
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not update this lead.");
-    } finally {
-      setBusyLead("");
+      const res = await fetch(`/api/leads/status`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ lead_id: leadId, status }),
+      });
+      if (!res.ok) throw new Error(await responseError(res));
+      setLeads((prev) => prev.filter((l) => l.lead_id !== leadId));
+      setCounts((prev: any) => ({
+        ...prev,
+        [activeTab]: Math.max(0, (prev[activeTab] || 0) - 1),
+        [status]: (prev[status] || 0) + 1,
+      }));
+    } catch (err: any) {
+      alert(`Could not update lead status: ${err.message}`);
     }
   }
 
-  const firstName = user?.displayName?.split(" ")[0] || "there";
+  const displayedLeads = useMemo(() => {
+    let list = leads;
+    if (search.trim()) {
+      const term = search.toLowerCase();
+      list = list.filter(
+        (l) =>
+          l.title?.toLowerCase().includes(term) ||
+          l.client?.toLowerCase().includes(term) ||
+          l.reasoning?.toLowerCase().includes(term)
+      );
+    }
+    return sortLeads(list, sort);
+  }, [leads, search, sort]);
 
   return (
-    <div className="min-h-dvh bg-[#f5f7f7]">
-      <header className="border-b border-[#dce4e1] bg-white">
-        <div className="mx-auto flex h-16 max-w-[1440px] items-center justify-between px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-3">
-            <Link href="/" className="grid size-9 place-items-center rounded-xl bg-[#153b32] text-white hover:bg-[#1a4a3e]">
-              <BriefcaseBusiness className="size-4" />
+    <div className="relative min-h-dvh overflow-x-hidden bg-[#080c0e] text-slate-100">
+      {/* Amber Background Ambient Glow */}
+      <div className="ambient-glow-studio" />
+
+      {/* Top Navbar */}
+      <header className="sticky top-0 z-40 border-b border-white/5 bg-[#080c0e]/85 backdrop-blur-xl">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center gap-4">
+            <Link href="/" className="flex items-center gap-2.5 transition hover:opacity-80">
+              <div className="grid size-8 place-items-center rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                <Sparkles className="size-4" />
+              </div>
+              <span className="font-display text-lg font-bold tracking-tight text-white">TalentOS</span>
             </Link>
-            <span className="font-semibold text-[#17211e]">TalentOS // Studio</span>
-            <span className="hidden rounded-full bg-[#eef3f1] px-2.5 py-1 text-xs font-medium text-[#53635e] sm:inline">Private beta</span>
+
+            <div className="hidden items-center gap-1 rounded-xl border border-white/10 bg-white/5 p-1 sm:flex">
+              <Link
+                href="/jobs"
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1 text-xs font-medium text-slate-400 transition hover:text-white"
+              >
+                <Search className="size-3.5" />
+                <span>Careers</span>
+              </Link>
+              <Link
+                href="/freelance"
+                className="flex items-center gap-1.5 rounded-lg bg-amber-500/20 px-3 py-1 text-xs font-semibold text-amber-300"
+              >
+                <BriefcaseBusiness className="size-3.5" />
+                <span>Studio</span>
+              </Link>
+            </div>
           </div>
-          <div className="flex items-center gap-2 sm:gap-4">
-            <Link href="/freelance/settings" className="inline-flex h-9 items-center gap-2 rounded-lg px-2.5 text-sm font-semibold text-[#53635e] hover:bg-[#f0f3f2] hover:text-[#25312d]">
-              <Settings className="size-4" /><span className="hidden sm:inline">Freelance settings</span>
+
+          <div className="flex items-center gap-3">
+            <Link
+              href="/freelance/settings"
+              className="flex items-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-950/40 px-3 py-1.5 text-xs font-semibold text-amber-300 transition hover:bg-amber-900/50"
+            >
+              <Sliders className="size-3.5" />
+              <span className="hidden sm:inline">Freelance Services</span>
             </Link>
-            <div className="hidden text-right sm:block"><p className="text-sm font-medium text-[#25312d]">{user?.displayName || user?.email}</p><p className="text-xs text-[#7a8782]">Human reviewer</p></div>
-            <div className="grid size-9 place-items-center rounded-full bg-[#f4eceb] text-[#8b423a]"><UserRound className="size-4" /></div>
-            <button type="button" aria-label="Sign out" onClick={() => void logout()} className="grid size-9 place-items-center rounded-lg text-[#64726d] hover:bg-[#f0f3f2] hover:text-[#25312d]"><LogOut className="size-4" /></button>
+
+            <div className="h-4 w-px bg-white/10" />
+
+            <button
+              type="button"
+              onClick={() => void logout()}
+              className="rounded-lg p-2 text-slate-400 transition hover:bg-white/5 hover:text-white"
+              title="Sign out"
+            >
+              <LogOut className="size-4" />
+            </button>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1440px] px-4 py-7 sm:px-6 lg:px-8 lg:py-10">
-        <div className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
+      {/* Main Content Area */}
+      <main className="relative z-10 mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        {/* Header & Metrics */}
+        <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
           <div>
-            <p className="text-sm font-semibold text-[#8b423a]">YOUR FREELANCE WORKSPACE</p>
-            <h1 className="mt-2 text-balance text-3xl font-semibold text-[#17211e] sm:text-4xl">Good to see you, {firstName}.</h1>
-            <p className="mt-2 text-pretty text-[#64726d]">Review matched leads, prepare your pitch, and make the final send.</p>
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-amber-400">
+              <span>TalentOS // Studio</span>
+              <span className="size-1 rounded-full bg-amber-400" />
+              <span>Freelance Pipeline</span>
+            </div>
+            <h1 className="font-display mt-1 text-3xl font-extrabold text-white sm:text-4xl">
+              Client Opportunity Feed
+            </h1>
+            <p className="mt-1 text-sm text-slate-400">
+              Autonomous gig monitoring (r/forhire, WWR, Contra) with Gemini fit scoring & pre-drafted client pitches.
+            </p>
+          </div>
+
+          {/* Quick Metrics */}
+          <div className="glass-panel flex items-center gap-4 rounded-2xl px-5 py-3 border border-white/5">
+            <div className="text-left">
+              <span className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400">To Pitch</span>
+              <span className="font-display text-lg font-bold text-amber-400">{counts.matched}</span>
+            </div>
+            <div className="h-6 w-px bg-white/10" />
+            <div className="text-left">
+              <span className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400">Sent Out</span>
+              <span className="font-display text-lg font-bold text-slate-300">{counts.sent}</span>
+            </div>
+            <div className="h-6 w-px bg-white/10" />
+            <div className="text-left">
+              <span className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400">Skipped</span>
+              <span className="font-display text-lg font-bold text-slate-400">{counts.skipped}</span>
+            </div>
           </div>
         </div>
 
-        {notice && <div role="status" className="mt-5 flex items-center justify-between rounded-xl border border-[#bcded3] bg-[#f1faf7] px-4 py-3 text-sm text-[#0a5d49]"><span className="inline-flex items-center gap-2"><CheckCircle2 className="size-4" />{notice}</span><button aria-label="Dismiss message" onClick={() => setNotice("")}><X className="size-4" /></button></div>}
+        {/* Status Tabs & Filters */}
+        <div className="mt-8 flex flex-col gap-4 border-b border-white/5 pb-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2">
+            {tabs.map((tab) => {
+              const Icon = tab.icon;
+              const count = (counts as any)[tab.value] || 0;
+              const isActive = activeTab === tab.value;
+              return (
+                <button
+                  key={tab.value}
+                  onClick={() => setActiveTab(tab.value)}
+                  className={cn(
+                    "flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold transition",
+                    isActive
+                      ? "bg-amber-500 text-[#080c0e] shadow-[0_0_15px_rgba(245,158,11,0.3)]"
+                      : "border border-white/5 bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white"
+                  )}
+                >
+                  <Icon className="size-3.5" />
+                  <span>{tab.label}</span>
+                  <span
+                    className={cn(
+                      "rounded-full px-1.5 py-0.5 text-[10px] font-mono font-bold",
+                      isActive ? "bg-black/20 text-[#080c0e]" : "bg-white/10 text-slate-400"
+                    )}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
 
-        <section aria-label="Lead summary" className="mt-7 grid gap-3 sm:grid-cols-3">
-          <Metric label="Ready to pitch" value={datasets.matched.length} detail="Matched and drafted by your agent" icon={Sparkles} />
-          <Metric label="Pitches sent" value={datasets.sent.length} detail="Marked sent by you" icon={CheckCircle2} />
-          <Metric label="Reviewed out" value={datasets.skipped.length} detail="Kept visible with a reason" icon={ShieldCheck} />
-        </section>
-
-        <div className="mt-8 grid gap-7 lg:grid-cols-[220px_minmax(0,1fr)]">
-          <aside className="lg:sticky lg:top-6 lg:self-start">
-            <nav aria-label="Pitch stages" className="flex gap-2 overflow-x-auto pb-1 lg:flex-col">
-              {tabs.map(({ value, label, icon: Icon }) => (
-                <button key={value} type="button" onClick={() => setActive(value)} className={cn("flex h-11 shrink-0 items-center gap-3 rounded-xl px-3 text-sm font-medium lg:w-full", active === value ? "bg-[#153b32] text-white" : "text-[#53635e] hover:bg-white hover:text-[#25312d]")}><Icon className="size-4" /><span>{label}</span><span className={cn("ml-auto tabular-nums", active === value ? "text-[#c5ddd6]" : "text-[#8a9692]")}>{datasets[value]?.length ?? 0}</span></button>
-              ))}
-            </nav>
-            <div className="mt-5 hidden rounded-xl border border-[#dce4e1] bg-white p-4 text-sm lg:block"><div className="flex items-center gap-2 font-semibold text-[#25312d]"><Clock3 className="size-4 text-[#8b423a]" /> Agent schedule</div><p className="mt-2 text-pretty leading-6 text-[#6a7772]">Sources refresh on schedule. New leads enter the next run.</p></div>
-          </aside>
-
-          <section>
-            <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-              <div><h2 className="text-balance text-xl font-semibold text-[#17211e]">{tabs.find((tab) => tab.value === active)?.label}</h2><p className="mt-1 text-sm text-[#7a8782]">{visibleLeads.length} {visibleLeads.length === 1 ? "lead" : "leads"}</p></div>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <label className="relative block sm:w-72"><span className="sr-only">Search leads</span><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#81908a]" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search title or client" className="h-11 w-full rounded-xl border border-[#cfd9d5] bg-white pl-10 pr-4 text-sm shadow-sm" /></label>
-                <label>
-                  <span className="sr-only">Sort leads</span>
-                  <select value={sort} onChange={(event) => setSort(event.target.value as SortOption)} className="h-11 w-full rounded-xl border border-[#cfd9d5] bg-white px-3 text-sm font-medium text-[#42504b] shadow-sm sm:w-48">
-                    <option value="newest">Newest lead</option>
-                    <option value="position">Position A–Z</option>
-                    <option value="budget">Budget</option>
-                    <option value="match">Strongest match</option>
-                  </select>
-                </label>
-              </div>
+          <div className="flex items-center gap-3">
+            <div className="relative flex-1 sm:w-64">
+              <Search className="absolute top-2.5 left-3 size-3.5 text-slate-500" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search leads or client..."
+                className="h-9 w-full rounded-xl border border-white/10 bg-[#0d1317] pl-8 pr-3 text-xs text-white placeholder:text-slate-600 focus:border-amber-500/50 focus:outline-none"
+              />
             </div>
 
-            {error && <div role="alert" className="mb-5 rounded-xl border border-[#efc7c2] bg-[#fff5f3] p-4 text-sm text-[#8d362d]"><div className="flex items-start gap-3"><CircleAlert className="mt-0.5 size-4 shrink-0" /><div><p className="font-semibold">Could not load leads</p><p className="mt-1 text-pretty">{error}</p><button type="button" onClick={() => void load()} className="mt-3 font-semibold underline">Try again</button></div></div></div>}
-
-            {loading ? <DashboardSkeleton /> : visibleLeads.length ? (
-              <div className="space-y-4">{visibleLeads.map((lead) => <LeadCard key={lead.lead_id} lead={lead} onSent={markSent} busy={busyLead === lead.lead_id} />)}</div>
-            ) : (
-              <div className="rounded-2xl border border-dashed border-[#c9d4d0] bg-white px-6 py-16 text-center"><div className="mx-auto grid size-12 place-items-center rounded-2xl bg-[#f4eceb] text-[#8b423a]"><BriefcaseBusiness className="size-5" /></div><h3 className="mt-4 text-balance text-lg font-semibold text-[#25312d]">{search ? "No leads match your search" : active === "matched" ? "No leads to pitch yet" : `No ${active} leads yet`}</h3><p className="mx-auto mt-2 max-w-sm text-pretty text-sm leading-6 text-[#6a7772]">{search ? "Try a title, client name, or budget." : "New leads will appear after the next scheduled run."}</p>{search && <button type="button" onClick={() => setSearch("")} className="mt-4 text-sm font-semibold text-[#8b423a]">Clear search</button>}</div>
-            )}
-          </section>
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as SortOption)}
+              className="h-9 rounded-xl border border-white/10 bg-[#0d1317] px-3 text-xs text-slate-300 focus:border-amber-500/50 focus:outline-none"
+            >
+              <option value="newest">Newest First</option>
+              <option value="match">Highest Fit</option>
+              <option value="budget">Budget Size</option>
+              <option value="position">Lead Title</option>
+            </select>
+          </div>
         </div>
+
+        {/* Lead Stream */}
+        {loading ? (
+          <div className="flex min-h-[300px] items-center justify-center">
+            <div className="flex items-center gap-3 text-sm text-slate-400">
+              <span className="size-4 animate-spin rounded-full border-2 border-amber-500/30 border-t-amber-400" />
+              <span>Scanning freelance feeds & Firestore leads…</span>
+            </div>
+          </div>
+        ) : error ? (
+          <div className="rounded-2xl border border-rose-500/30 bg-rose-950/30 p-6 text-center">
+            <CircleAlert className="mx-auto size-8 text-rose-400" />
+            <h3 className="font-display mt-2 text-base font-bold text-white">Error loading client leads</h3>
+            <p className="mt-1 text-xs text-rose-300">{error}</p>
+            <button
+              onClick={() => void fetchLeads(activeTab)}
+              className="mt-4 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-white hover:bg-white/10"
+            >
+              Retry
+            </button>
+          </div>
+        ) : displayedLeads.length === 0 ? (
+          <div className="glass-panel flex min-h-[260px] flex-col items-center justify-center rounded-3xl p-8 text-center border border-white/5">
+            <div className="grid size-12 place-items-center rounded-2xl bg-white/5 text-slate-500">
+              <BriefcaseBusiness className="size-6" />
+            </div>
+            <h3 className="font-display mt-4 text-base font-bold text-white">No freelance leads in this view</h3>
+            <p className="mt-1 max-w-sm text-xs text-slate-400">
+              {search ? "No leads matched your search query." : "TalentOS Studio monitors r/forhire, WWR contracts, and Contra continuously."}
+            </p>
+          </div>
+        ) : (
+          <div className="mt-6 space-y-4">
+            {displayedLeads.map((lead) => {
+              const badge = matchBadge(lead);
+              const src = sourceBadge(lead.source);
+              const isExpanded = expandedLeadId === lead.lead_id;
+              return (
+                <div
+                  key={lead.lead_id}
+                  className="glass-card rounded-2xl p-6 border border-white/10 transition-all hover:border-white/20"
+                >
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="space-y-1.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={cn("rounded-full border px-2.5 py-0.5 text-[11px] font-semibold tracking-wide", badge.className)}>
+                          {badge.label}
+                        </span>
+                        <span className={cn("rounded-md border px-2 py-0.5 text-[11px] font-mono", src.className)}>
+                          {src.label}
+                        </span>
+                        {lead.budget && (
+                          <span className="flex items-center gap-1 rounded-md border border-amber-500/20 bg-amber-950/30 px-2 py-0.5 text-[11px] text-amber-300 font-mono font-semibold">
+                            <DollarSign className="size-3" />
+                            {lead.budget}
+                          </span>
+                        )}
+                        <span className="text-xs text-slate-500">{formatDate(lead.posted_at || lead.evaluated_at)}</span>
+                      </div>
+
+                      <h3 className="font-display text-xl font-bold text-white">{lead.title}</h3>
+
+                      <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400">
+                        {lead.client && (
+                          <span>Client: <strong className="text-slate-300 font-medium">{lead.client}</strong></span>
+                        )}
+                        {lead.contact_method && (
+                          <span className="text-slate-400">Contact: <span className="text-slate-200">{lead.contact_method}</span></span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Action Bar */}
+                    <div className="flex flex-wrap items-center gap-2 sm:self-start">
+                      {lead.url && (
+                        <a
+                          href={lead.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 p-2 text-xs font-medium text-slate-300 transition hover:bg-white/10 hover:text-white"
+                          title="Original Gig Posting"
+                        >
+                          <ExternalLink className="size-4" />
+                        </a>
+                      )}
+
+                      {activeTab !== "skipped" && (
+                        <Link
+                          href={`/freelance/pitch?lead_id=${encodeURIComponent(lead.lead_id)}`}
+                          className="flex items-center gap-1.5 rounded-xl bg-amber-500 px-3.5 py-2 text-xs font-semibold text-[#080c0e] shadow-[0_0_15px_rgba(245,158,11,0.2)] transition hover:bg-amber-400 active:scale-[0.98]"
+                        >
+                          <Send className="size-3.5" />
+                          <span>Review & Send Pitch</span>
+                        </Link>
+                      )}
+
+                      {activeTab === "matched" && (
+                        <button
+                          onClick={() => void updateStatus(lead.lead_id, "sent")}
+                          className="flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-white/10 hover:text-white"
+                        >
+                          <Check className="size-3.5 text-amber-400" />
+                          <span>Mark Sent</span>
+                        </button>
+                      )}
+
+                      {activeTab === "sent" && (
+                        <button
+                          onClick={() => void updateStatus(lead.lead_id, "matched")}
+                          className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-slate-400 hover:text-white"
+                        >
+                          Move to Inbox
+                        </button>
+                      )}
+
+                      {activeTab !== "skipped" && (
+                        <button
+                          onClick={() => void updateStatus(lead.lead_id, "skipped")}
+                          className="rounded-xl p-2 text-slate-500 hover:bg-rose-500/10 hover:text-rose-400"
+                          title="Skip lead"
+                        >
+                          <X className="size-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Expandable Reasoning & Lead Details */}
+                  <div className="mt-4 border-t border-white/5 pt-3">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedLeadId(isExpanded ? null : lead.lead_id)}
+                      className="flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-white transition"
+                    >
+                      <ChevronRight className={cn("size-3.5 transition-transform", isExpanded && "rotate-90")} />
+                      <span>{isExpanded ? "Hide Details" : "View Client Request & AI Fit Reasoning"}</span>
+                    </button>
+
+                    {isExpanded && (
+                      <div className="mt-3 space-y-3 rounded-xl border border-white/5 bg-[#0a0f12] p-4 text-xs leading-relaxed">
+                        {lead.reasoning && (
+                          <div>
+                            <span className="font-semibold text-amber-300">Why this project fits:</span>
+                            <p className="mt-0.5 text-slate-300">{lead.reasoning}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </main>
     </div>
   );

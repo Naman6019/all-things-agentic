@@ -9,11 +9,15 @@ import {
   Printer,
   RotateCcw,
   Save,
+  Sparkles,
   Trash2,
+  ExternalLink,
+  ChevronRight,
+  Eye,
+  Edit3
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AuthScreen } from "@/components/auth-screen";
 import { useAuth } from "@/components/auth-provider";
 import { cn } from "@/lib/utils";
 import type { MaterialsResponse, ResumeEntry, TailoredResume } from "@/lib/types";
@@ -56,13 +60,6 @@ function normalizeResume(value: TailoredResume): TailoredResume {
   };
 }
 
-function broadcastEdit(jobId: string, materialType: MaterialType, edited: boolean, timestamp?: string) {
-  if (!("BroadcastChannel" in window)) return;
-  const channel = new BroadcastChannel("career-agent-materials");
-  channel.postMessage({ jobId, materialType, edited, timestamp });
-  channel.close();
-}
-
 function ResumeEntryEditor({
   entry,
   label,
@@ -75,341 +72,394 @@ function ResumeEntryEditor({
   onRemove: () => void;
 }) {
   return (
-    <fieldset className="rounded-2xl border border-[#dce4e1] bg-white p-5 shadow-sm">
-      <div className="flex items-center justify-between gap-3">
-        <legend className="text-sm font-semibold text-[#25312d]">{label}</legend>
-        <button type="button" onClick={onRemove} className="inline-flex h-9 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-[#8d362d] hover:bg-[#fbf3f2]">
-          <Trash2 className="size-4" /> Remove
+    <fieldset className="glass-card rounded-2xl border border-white/10 p-5 shadow-lg">
+      <div className="flex items-center justify-between gap-3 border-b border-white/5 pb-3">
+        <legend className="font-display text-sm font-bold text-white">{label}</legend>
+        <button
+          type="button"
+          onClick={onRemove}
+          className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold text-rose-400 hover:bg-rose-500/10 transition"
+        >
+          <Trash2 className="size-3.5" /> Remove
         </button>
       </div>
+      
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        <label className="block">
-          <span className="mb-1.5 block text-xs font-semibold text-[#53635e]">TITLE</span>
-          <input value={entry.title} onChange={(event) => onChange({ ...entry, title: event.target.value })} className="h-11 w-full rounded-xl border border-[#cfd9d5] px-3 text-sm" />
-        </label>
-        <label className="block">
-          <span className="mb-1.5 block text-xs font-semibold text-[#53635e]">ORGANIZATION</span>
-          <input value={entry.organization} onChange={(event) => onChange({ ...entry, organization: event.target.value })} className="h-11 w-full rounded-xl border border-[#cfd9d5] px-3 text-sm" />
-        </label>
-        <label className="block sm:col-span-2">
-          <span className="mb-1.5 block text-xs font-semibold text-[#53635e]">DATES</span>
-          <input value={entry.dates} onChange={(event) => onChange({ ...entry, dates: event.target.value })} className="h-11 w-full rounded-xl border border-[#cfd9d5] px-3 text-sm" />
-        </label>
-        <label className="block sm:col-span-2">
-          <span className="mb-1.5 block text-xs font-semibold text-[#53635e]">BULLETS — ONE PER LINE</span>
-          <textarea value={entry.bullets.join("\n")} onChange={(event) => onChange({ ...entry, bullets: splitLines(event.target.value) })} rows={5} className="w-full resize-y rounded-xl border border-[#cfd9d5] px-3 py-3 text-sm leading-6" />
-        </label>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-400">Position / Project Title</label>
+          <input
+            value={entry.title}
+            onChange={(event) => onChange({ ...entry, title: event.target.value })}
+            className="h-10 w-full rounded-xl border border-white/10 bg-[#0d1317] px-3 text-xs text-white placeholder:text-slate-600 focus:border-emerald-500/50 focus:outline-none"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-400">Organization / Employer</label>
+          <input
+            value={entry.organization}
+            onChange={(event) => onChange({ ...entry, organization: event.target.value })}
+            className="h-10 w-full rounded-xl border border-white/10 bg-[#0d1317] px-3 text-xs text-white placeholder:text-slate-600 focus:border-emerald-500/50 focus:outline-none"
+          />
+        </div>
+        <div className="sm:col-span-2">
+          <label className="mb-1 block text-xs font-medium text-slate-400">Employment Dates / Timeline</label>
+          <input
+            value={entry.dates}
+            onChange={(event) => onChange({ ...entry, dates: event.target.value })}
+            placeholder="e.g. 2023 — Present"
+            className="h-10 w-full rounded-xl border border-white/10 bg-[#0d1317] px-3 text-xs text-white placeholder:text-slate-600 focus:border-emerald-500/50 focus:outline-none"
+          />
+        </div>
+        <div className="sm:col-span-2">
+          <label className="mb-1 block text-xs font-medium text-slate-400">Tailored Bullets (One per line)</label>
+          <textarea
+            value={entry.bullets.join("\n")}
+            onChange={(event) => onChange({ ...entry, bullets: splitLines(event.target.value) })}
+            rows={4}
+            className="w-full resize-y rounded-xl border border-white/10 bg-[#0d1317] p-3 text-xs text-slate-200 leading-relaxed placeholder:text-slate-600 focus:border-emerald-500/50 focus:outline-none"
+          />
+        </div>
       </div>
     </fieldset>
   );
 }
 
-function ResumeEditor({ value, onChange }: { value: TailoredResume; onChange: (value: TailoredResume) => void }) {
-  function updateEntry(section: "experience" | "projects", index: number, entry: ResumeEntry) {
-    const items = value[section].map((item, itemIndex) => itemIndex === index ? entry : item);
-    onChange({ ...value, [section]: items });
-  }
-
-  function removeEntry(section: "experience" | "projects", index: number) {
-    onChange({ ...value, [section]: value[section].filter((_, itemIndex) => itemIndex !== index) });
-  }
-
-  function addEntry(section: "experience" | "projects") {
-    onChange({ ...value, [section]: [...value[section], emptyEntry()] });
-  }
-
-  return (
-    <div className="space-y-8">
-      <section className="rounded-2xl border border-[#dce4e1] bg-white p-5 shadow-sm sm:p-6">
-        <h2 className="text-balance text-lg font-semibold text-[#17211e]">Positioning</h2>
-        <div className="mt-5 space-y-4">
-          <label className="block">
-            <span className="mb-1.5 block text-xs font-semibold text-[#53635e]">HEADLINE</span>
-            <input value={value.headline} onChange={(event) => onChange({ ...value, headline: event.target.value })} className="h-11 w-full rounded-xl border border-[#cfd9d5] px-3 text-sm" />
-          </label>
-          <label className="block">
-            <span className="mb-1.5 block text-xs font-semibold text-[#53635e]">SUMMARY</span>
-            <textarea value={value.summary} onChange={(event) => onChange({ ...value, summary: event.target.value })} rows={4} className="w-full resize-y rounded-xl border border-[#cfd9d5] px-3 py-3 text-sm leading-6" />
-          </label>
-          <label className="block">
-            <span className="mb-1.5 block text-xs font-semibold text-[#53635e]">SKILLS — ONE PER LINE</span>
-            <textarea value={value.skills.join("\n")} onChange={(event) => onChange({ ...value, skills: splitLines(event.target.value) })} rows={6} className="w-full resize-y rounded-xl border border-[#cfd9d5] px-3 py-3 text-sm leading-6" />
-          </label>
-        </div>
-      </section>
-
-      {(["experience", "projects"] as const).map((section) => (
-        <section key={section}>
-          <div className="mb-4 flex items-center justify-between gap-4">
-            <div>
-              <h2 className="text-balance text-lg font-semibold capitalize text-[#17211e]">{section}</h2>
-              <p className="mt-1 text-pretty text-sm text-[#64726d]">Keep the most relevant entries first.</p>
-            </div>
-            <button type="button" onClick={() => addEntry(section)} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#cfd9d5] bg-white px-4 text-sm font-semibold text-[#42504b] hover:bg-[#f7f9f8]">
-              <Plus className="size-4" /> Add
-            </button>
-          </div>
-          <div className="space-y-4">
-            {value[section].map((entry, index) => (
-              <ResumeEntryEditor key={`${section}-${index}`} entry={entry} label={`${section === "experience" ? "Experience" : "Project"} ${index + 1}`} onChange={(next) => updateEntry(section, index, next)} onRemove={() => removeEntry(section, index)} />
-            ))}
-            {value[section].length === 0 && (
-              <div className="rounded-2xl border border-dashed border-[#cfd9d5] bg-white p-6 text-center">
-                <p className="text-pretty text-sm text-[#64726d]">No {section} entries. Add one if it strengthens this application.</p>
-              </div>
-            )}
-          </div>
-        </section>
-      ))}
-
-      <section className="rounded-2xl border border-[#dce4e1] bg-white p-5 shadow-sm sm:p-6">
-        <h2 className="text-balance text-lg font-semibold text-[#17211e]">Education & achievements</h2>
-        <label className="mt-5 block">
-          <span className="mb-1.5 block text-xs font-semibold text-[#53635e]">ONE PER LINE</span>
-          <textarea value={value.education.join("\n")} onChange={(event) => onChange({ ...value, education: splitLines(event.target.value) })} rows={6} className="w-full resize-y rounded-xl border border-[#cfd9d5] px-3 py-3 text-sm leading-6" />
-        </label>
-      </section>
-    </div>
-  );
-}
-
-function Editor({ jobId, materialType }: { jobId: string; materialType: MaterialType }) {
-  const { user, loading: authLoading } = useAuth();
+export function MaterialEditor({ jobId, materialType = "cover-letter" }: { jobId: string; materialType?: MaterialType }) {
   const router = useRouter();
-  const [materials, setMaterials] = useState<MaterialsResponse | null>(null);
-  const [coverLetter, setCoverLetter] = useState("");
-  const [resume, setResume] = useState<TailoredResume | null>(null);
-  const [savedValue, setSavedValue] = useState("");
+  const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState<MaterialType>(materialType);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-  const restoreDialog = useRef<HTMLDialogElement>(null);
-  const leaveDialog = useRef<HTMLDialogElement>(null);
+  const [materials, setMaterials] = useState<MaterialsResponse | null>(null);
 
-  const request = useCallback(async (path: string, init: RequestInit = {}) => {
-    if (!user) throw new Error("Sign in is required.");
-    const token = await user.getIdToken();
-    const headers = new Headers(init.headers);
-    headers.set("authorization", `Bearer ${token}`);
-    return fetch(path, { ...init, headers });
-  }, [user]);
+  // Edit states
+  const [coverLetterText, setCoverLetterText] = useState("");
+  const [resumeData, setResumeData] = useState<TailoredResume | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [savedNotice, setSavedNotice] = useState(false);
 
-  useEffect(() => {
-    if (!user || !jobId) return;
-    let active = true;
-    void (async () => {
-      setLoading(true); setError("");
-      try {
-        const response = await request(`/api/materials?job_id=${encodeURIComponent(jobId)}`);
-        if (!response.ok) throw new Error(await responseError(response));
-        const data = (await response.json()) as MaterialsResponse;
-        if (!active) return;
-        setMaterials(data);
-        setCoverLetter(data.effective_cover_letter);
-        setResume(data.effective_tailored_resume);
-        setSavedValue(materialType === "cover-letter" ? data.effective_cover_letter : JSON.stringify(data.effective_tailored_resume));
-      } catch (caught) {
-        if (active) setError(caught instanceof Error ? caught.message : "Could not load application materials.");
-      } finally {
-        if (active) setLoading(false);
-      }
-    })();
-    return () => { active = false; };
-  }, [jobId, materialType, request, user]);
-
-  const currentValue = materialType === "cover-letter" ? coverLetter : JSON.stringify(resume);
-  const dirty = Boolean(materials) && currentValue !== savedValue;
-  const editedAt = materialType === "cover-letter" ? materials?.cover_letter_edited_at : materials?.tailored_resume_edited_at;
-  const wordCount = useMemo(() => coverLetter.trim() ? coverLetter.trim().split(/\s+/).length : 0, [coverLetter]);
-
-  useEffect(() => {
-    if (!dirty) return;
-    const warn = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [dirty]);
-
-  async function save() {
-    if (!resume) return;
-    setSaving(true); setError(""); setNotice("");
+  const fetchMaterials = useCallback(async () => {
+    setLoading(true);
+    setError("");
     try {
-      const normalizedResume = normalizeResume(resume);
-      const body = materialType === "cover-letter"
-        ? { job_id: jobId, material_type: "cover_letter", cover_letter: coverLetter }
-        : { job_id: jobId, material_type: "tailored_resume", tailored_resume: normalizedResume };
-      const response = await request("/api/materials", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-      if (!response.ok) throw new Error(await responseError(response));
-      const timestamp = new Date().toISOString();
-      setSavedValue(materialType === "cover-letter" ? coverLetter.trim() : JSON.stringify(normalizedResume));
-      setMaterials((current) => current ? {
-        ...current,
-        cover_letter_edited_at: materialType === "cover-letter" ? timestamp : current.cover_letter_edited_at,
-        tailored_resume_edited_at: materialType === "resume" ? timestamp : current.tailored_resume_edited_at,
-      } : current);
-      if (materialType === "cover-letter") setCoverLetter((current) => current.trim());
-      else setResume(normalizedResume);
-      broadcastEdit(jobId, materialType, true, timestamp);
-      setNotice("Edits saved for this posting.");
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not save your edits.");
+      const res = await fetch(`/api/materials?job_id=${encodeURIComponent(jobId)}`);
+      if (!res.ok) throw new Error(await responseError(res));
+      const data = (await res.json()) as MaterialsResponse;
+      setMaterials(data);
+      setCoverLetterText(data.effective_cover_letter || data.generated_cover_letter || "");
+      setResumeData(data.effective_tailored_resume || data.generated_tailored_resume || null);
+    } catch (err: any) {
+      setError(err.message || "Failed to load application materials.");
     } finally {
-      setSaving(false);
+      setLoading(false);
     }
-  }
+  }, [jobId]);
 
-  async function restoreGenerated() {
-    if (!materials) return;
-    setSaving(true); setError(""); setNotice("");
+  useEffect(() => {
+    void fetchMaterials();
+  }, [fetchMaterials]);
+
+  async function handleSave() {
+    setSaving(true);
+    setSavedNotice(false);
     try {
-      const response = await request("/api/materials", {
+      const body: any = { job_id: jobId };
+      if (activeTab === "cover-letter") {
+        body.cover_letter = coverLetterText;
+      } else if (activeTab === "resume" && resumeData) {
+        body.tailored_resume = normalizeResume(resumeData);
+      }
+
+      const res = await fetch("/api/materials", {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ job_id: jobId, material_type: materialType === "cover-letter" ? "cover_letter" : "tailored_resume", reset: true }),
+        body: JSON.stringify(body),
       });
-      if (!response.ok) throw new Error(await responseError(response));
-      if (materialType === "cover-letter") {
-        setCoverLetter(materials.generated_cover_letter);
-        setSavedValue(materials.generated_cover_letter);
-        setMaterials({ ...materials, edited_cover_letter: null, cover_letter_edited_at: null, effective_cover_letter: materials.generated_cover_letter });
-      } else {
-        setResume(materials.generated_tailored_resume);
-        setSavedValue(JSON.stringify(materials.generated_tailored_resume));
-        setMaterials({ ...materials, edited_tailored_resume: null, tailored_resume_edited_at: null, effective_tailored_resume: materials.generated_tailored_resume });
-      }
-      broadcastEdit(jobId, materialType, false);
-      setNotice("Generated version restored.");
-      restoreDialog.current?.close();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not restore the generated version.");
+      if (!res.ok) throw new Error(await responseError(res));
+      setSavedNotice(true);
+      setTimeout(() => setSavedNotice(false), 3000);
+      void fetchMaterials();
+    } catch (err: any) {
+      alert(`Save failed: ${err.message}`);
     } finally {
       setSaving(false);
     }
   }
 
-  async function openPrintableResume() {
-    setError("");
-    const preview = window.open("", "_blank");
-    if (!preview) {
-      setError("Allow pop-ups to open the printable resume.");
-      return;
-    }
-    preview.document.title = "Preparing resume…";
-    preview.document.body.textContent = "Preparing printable resume…";
+  async function handleResetDraft() {
+    if (!confirm("Reset these materials back to the original Gemini AI draft?")) return;
+    setSaving(true);
     try {
-      const response = await request(`/api/resume?job_id=${encodeURIComponent(jobId)}`);
-      if (!response.ok) throw new Error(await responseError(response));
-      const url = URL.createObjectURL(await response.blob());
-      preview.opener = null;
-      preview.location.href = url;
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch (caught) {
-      preview.close();
-      setError(caught instanceof Error ? caught.message : "Could not open the printable resume.");
+      const body: any = { job_id: jobId };
+      if (activeTab === "cover-letter") {
+        body.reset_cover_letter = true;
+      } else {
+        body.reset_tailored_resume = true;
+      }
+      const res = await fetch("/api/materials", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(await responseError(res));
+      void fetchMaterials();
+    } catch (err: any) {
+      alert(`Reset failed: ${err.message}`);
+    } finally {
+      setSaving(false);
     }
   }
 
-  async function copyCoverLetter() {
-    setError("");
-    try {
-      await navigator.clipboard.writeText(coverLetter);
-      setNotice("Copied to clipboard.");
-    } catch {
-      setError("Clipboard access was blocked by the browser.");
+  function handleCopy() {
+    if (activeTab === "cover-letter") {
+      navigator.clipboard.writeText(coverLetterText);
+    } else if (resumeData) {
+      const text = `${resumeData.headline}\n\n${resumeData.summary}\n\nSkills: ${resumeData.skills.join(", ")}`;
+      navigator.clipboard.writeText(text);
     }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   }
 
-  if (authLoading) {
-    return <main className="grid min-h-dvh place-items-center bg-[#f5f7f7]"><p className="text-sm font-medium text-[#53635e]">Opening editor…</p></main>;
+  function handlePrint() {
+    window.open(`/api/resume?job_id=${encodeURIComponent(jobId)}`, "_blank");
   }
-  if (!user) return <AuthScreen />;
-  if (!jobId) return <main className="grid min-h-dvh place-items-center bg-[#f5f7f7] p-6"><p role="alert" className="text-sm text-[#8d362d]">No posting was selected.</p></main>;
-
-  const title = materialType === "cover-letter" ? "Edit cover letter" : "Edit tailored resume";
 
   return (
-    <div className="min-h-dvh bg-[#f5f7f7]">
-      <header className="border-b border-[#dce4e1] bg-white">
-        <div className="mx-auto flex min-h-16 max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <button type="button" onClick={() => dirty ? leaveDialog.current?.showModal() : router.push("/")} className="inline-flex h-10 items-center gap-2 rounded-xl px-3 text-sm font-semibold text-[#42504b] hover:bg-[#f0f3f2]"><ArrowLeft className="size-4" /> Workspace</button>
+    <div className="relative min-h-dvh overflow-x-hidden bg-[#080c0e] text-slate-100 pb-20">
+      <div className="ambient-glow-careers" />
+
+      {/* Header */}
+      <header className="sticky top-0 z-40 border-b border-white/5 bg-[#080c0e]/85 backdrop-blur-xl">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => router.push("/jobs")}
+              className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:bg-white/10 hover:text-white"
+            >
+              <ArrowLeft className="size-3.5" />
+              <span>Back to Jobs</span>
+            </button>
+            <div className="h-4 w-px bg-white/10" />
+            <span className="font-display text-sm font-bold text-white truncate max-w-xs sm:max-w-md">
+              {materials?.title || "Application Studio"}
+            </span>
+          </div>
+
+          {/* Action Bar */}
           <div className="flex items-center gap-2">
-            {materialType === "cover-letter" ? (
-              <button type="button" disabled={!coverLetter} onClick={() => void copyCoverLetter()} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#cfd9d5] px-4 text-sm font-semibold text-[#42504b] hover:bg-[#f7f9f8] disabled:opacity-50"><Clipboard className="size-4" /> Copy</button>
-            ) : (
-              <button type="button" disabled={!resume || dirty} title={dirty ? "Save changes before exporting" : "Open printable resume"} onClick={() => void openPrintableResume()} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#cfd9d5] px-4 text-sm font-semibold text-[#42504b] hover:bg-[#f7f9f8] disabled:opacity-50"><Printer className="size-4" /> Print / PDF</button>
-            )}
-            <button type="button" disabled={saving || !materials} onClick={() => restoreDialog.current?.showModal()} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#cfd9d5] px-4 text-sm font-semibold text-[#42504b] hover:bg-[#f7f9f8] disabled:opacity-50"><RotateCcw className="size-4" /> Restore</button>
-            <button type="button" disabled={saving || !dirty} onClick={() => void save()} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#0f6b55] px-4 text-sm font-semibold text-white hover:bg-[#0a5947] disabled:opacity-50"><Save className="size-4" />{saving ? "Saving…" : "Save draft"}</button>
+            <button
+              onClick={handlePrint}
+              className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:bg-white/10 hover:text-white"
+              title="Open Printable Resume"
+            >
+              <Printer className="size-3.5" />
+              <span className="hidden sm:inline">Print Ready A4</span>
+            </button>
+
+            <button
+              onClick={handleCopy}
+              className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:bg-white/10 hover:text-white"
+            >
+              {copied ? <Check className="size-3.5 text-emerald-400" /> : <Clipboard className="size-3.5" />}
+              <span>{copied ? "Copied" : "Copy"}</span>
+            </button>
+
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="flex items-center gap-1.5 rounded-xl bg-emerald-500 px-4 py-1.5 text-xs font-semibold text-[#080c0e] shadow-[0_0_15px_rgba(16,185,129,0.3)] transition hover:bg-emerald-400 active:scale-[0.98] disabled:opacity-50"
+            >
+              <Save className="size-3.5" />
+              <span>{saving ? "Saving…" : "Save Changes"}</span>
+            </button>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-10">
-        <div className="mb-7 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-          <div>
-            <div className="flex items-center gap-2 text-sm font-semibold text-[#0f6b55]"><FileText className="size-4" /> APPLICATION MATERIAL</div>
-            <h1 className="mt-2 text-balance text-3xl font-semibold text-[#17211e]">{title}</h1>
-            <p className="mt-2 text-pretty text-[#64726d]">{materials ? `${materials.title} at ${materials.company}` : "Loading posting…"}</p>
-          </div>
-          {materials && (
-            <div className={cn("inline-flex w-fit items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold", editedAt ? "bg-[#e8f3ef] text-[#0f6b55]" : "bg-[#eef3f1] text-[#53635e]")}>
-              {editedAt ? <Check className="size-3.5" /> : null}{editedAt ? "Human edited" : "AI-generated original"}
+      {/* Main Studio View */}
+      <main className="relative z-10 mx-auto max-w-6xl px-4 py-8 sm:px-6">
+        {/* Context Card */}
+        {materials && (
+          <div className="glass-panel mb-8 rounded-3xl p-6 border border-white/10">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <span className="text-xs font-mono text-emerald-400 uppercase tracking-wider">Target Position</span>
+                <h1 className="font-display text-2xl font-bold text-white">{materials.title}</h1>
+                <p className="mt-1 text-xs text-slate-400">
+                  {materials.company}
+                </p>
+              </div>
             </div>
-          )}
+          </div>
+        )}
+
+        {/* Tab Switcher */}
+        <div className="flex items-center justify-between border-b border-white/5 pb-4">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setActiveTab("cover-letter")}
+              className={cn(
+                "flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold transition",
+                activeTab === "cover-letter"
+                  ? "bg-emerald-500 text-[#080c0e] shadow-[0_0_15px_rgba(16,185,129,0.3)]"
+                  : "border border-white/5 bg-white/5 text-slate-400 hover:text-white"
+              )}
+            >
+              <FileText className="size-3.5" />
+              <span>Targeted Cover Letter</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab("resume")}
+              className={cn(
+                "flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold transition",
+                activeTab === "resume"
+                  ? "bg-emerald-500 text-[#080c0e] shadow-[0_0_15px_rgba(16,185,129,0.3)]"
+                  : "border border-white/5 bg-white/5 text-slate-400 hover:text-white"
+              )}
+            >
+              <Edit3 className="size-3.5" />
+              <span>Tailored Resume Structure</span>
+            </button>
+          </div>
+
+          <button
+            onClick={handleResetDraft}
+            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-rose-400 transition"
+          >
+            <RotateCcw className="size-3.5" />
+            <span className="hidden sm:inline">Reset to AI Draft</span>
+          </button>
         </div>
 
-        {error && <p role="alert" className="mb-5 rounded-xl border border-[#efd3cf] bg-[#fbf3f2] px-4 py-3 text-sm text-[#8d362d]">{error}</p>}
-        {notice && <p role="status" className="mb-5 rounded-xl border border-[#c8ded6] bg-[#f0f8f5] px-4 py-3 text-sm text-[#0f6b55]">{notice}</p>}
-
-        {loading ? (
-          <div className="space-y-4" aria-label="Loading material">
-            <div className="h-16 rounded-2xl bg-[#e8edeb]" />
-            <div className="h-96 rounded-2xl bg-[#e8edeb]" />
+        {savedNotice && (
+          <div className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-950/40 p-3 text-xs text-emerald-300 text-center">
+            ✓ Changes saved to Firestore. Print-ready resume and materials are up to date.
           </div>
-        ) : materialType === "cover-letter" ? (
-          <section className="rounded-2xl border border-[#dce4e1] bg-white p-5 shadow-sm sm:p-7">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <p className="text-pretty text-sm text-[#64726d]">Review tone, claims, and role-specific details before using it.</p>
-              <span className="tabular-nums text-xs font-semibold text-[#64726d]">{wordCount} words</span>
+        )}
+
+        {/* Editor Panes */}
+        {loading ? (
+          <div className="flex min-h-[300px] items-center justify-center">
+            <span className="size-5 animate-spin rounded-full border-2 border-emerald-500/30 border-t-emerald-400" />
+          </div>
+        ) : error ? (
+          <div className="mt-8 rounded-2xl border border-rose-500/30 bg-rose-950/30 p-6 text-center text-xs text-rose-300">
+            {error}
+          </div>
+        ) : activeTab === "cover-letter" ? (
+          <div className="mt-6 space-y-4">
+            <div className="glass-panel rounded-3xl p-6 border border-white/10">
+              <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-400">
+                150-250 Word Targeted Cover Letter (Crafted by Gemini 3.6 Flash)
+              </label>
+              <textarea
+                value={coverLetterText}
+                onChange={(e) => setCoverLetterText(e.target.value)}
+                rows={14}
+                className="w-full resize-y rounded-2xl border border-white/10 bg-[#0d1317] p-4 text-sm leading-relaxed text-slate-200 placeholder:text-slate-600 focus:border-emerald-500/50 focus:outline-none"
+              />
             </div>
-            <label className="block">
-              <span className="sr-only">Cover letter</span>
-              <textarea value={coverLetter} onChange={(event) => { setCoverLetter(event.target.value); setNotice(""); }} rows={24} className="w-full resize-y rounded-xl border border-[#cfd9d5] px-4 py-4 text-base leading-7 text-[#25312d]" />
-            </label>
-          </section>
-        ) : resume ? (
-          <ResumeEditor value={resume} onChange={(next) => { setResume(next); setNotice(""); }} />
+          </div>
+        ) : resumeData ? (
+          <div className="mt-6 space-y-6">
+            {/* Header & Headline */}
+            <div className="glass-panel rounded-3xl p-6 border border-white/10 space-y-4">
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-slate-400 uppercase">Tailored Professional Headline</label>
+                <input
+                  value={resumeData.headline}
+                  onChange={(e) => setResumeData({ ...resumeData, headline: e.target.value })}
+                  className="h-11 w-full rounded-xl border border-white/10 bg-[#0d1317] px-3.5 text-sm font-semibold text-white focus:border-emerald-500/50 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-slate-400 uppercase">Executive Summary</label>
+                <textarea
+                  value={resumeData.summary}
+                  onChange={(e) => setResumeData({ ...resumeData, summary: e.target.value })}
+                  rows={4}
+                  className="w-full rounded-xl border border-white/10 bg-[#0d1317] p-3 text-xs leading-relaxed text-slate-200 focus:border-emerald-500/50 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-slate-400 uppercase">Targeted Skills (Comma separated)</label>
+                <input
+                  value={resumeData.skills.join(", ")}
+                  onChange={(e) => setResumeData({ ...resumeData, skills: e.target.value.split(",").map((s) => s.trim()) })}
+                  className="h-10 w-full rounded-xl border border-white/10 bg-[#0d1317] px-3.5 text-xs text-emerald-300 font-mono focus:border-emerald-500/50 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            {/* Experience Section */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-display text-lg font-bold text-white">Experience</h3>
+                <button
+                  type="button"
+                  onClick={() => setResumeData({ ...resumeData, experience: [...resumeData.experience, emptyEntry()] })}
+                  className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-emerald-400 hover:bg-white/10"
+                >
+                  <Plus className="size-3.5" /> Add Experience
+                </button>
+              </div>
+
+              {resumeData.experience.map((exp, idx) => (
+                <ResumeEntryEditor
+                  key={idx}
+                  entry={exp}
+                  label={`Role #${idx + 1}: ${exp.title || "Untitled"}`}
+                  onChange={(updated) => {
+                    const next = [...resumeData.experience];
+                    next[idx] = updated;
+                    setResumeData({ ...resumeData, experience: next });
+                  }}
+                  onRemove={() => {
+                    setResumeData({ ...resumeData, experience: resumeData.experience.filter((_, i) => i !== idx) });
+                  }}
+                />
+              ))}
+            </div>
+
+            {/* Projects Section */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-display text-lg font-bold text-white">Projects</h3>
+                <button
+                  type="button"
+                  onClick={() => setResumeData({ ...resumeData, projects: [...resumeData.projects, emptyEntry()] })}
+                  className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-emerald-400 hover:bg-white/10"
+                >
+                  <Plus className="size-3.5" /> Add Project
+                </button>
+              </div>
+
+              {resumeData.projects.map((proj, idx) => (
+                <ResumeEntryEditor
+                  key={idx}
+                  entry={proj}
+                  label={`Project #${idx + 1}: ${proj.title || "Untitled"}`}
+                  onChange={(updated) => {
+                    const next = [...resumeData.projects];
+                    next[idx] = updated;
+                    setResumeData({ ...resumeData, projects: next });
+                  }}
+                  onRemove={() => {
+                    setResumeData({ ...resumeData, projects: resumeData.projects.filter((_, i) => i !== idx) });
+                  }}
+                />
+              ))}
+            </div>
+          </div>
         ) : null}
       </main>
-
-      <dialog ref={restoreDialog} aria-labelledby="restore-title" className="m-auto w-11/12 max-w-md rounded-2xl border border-[#dce4e1] bg-white p-0 shadow-xl backdrop:bg-black/40">
-        <div className="p-6">
-          <h2 id="restore-title" className="text-balance text-lg font-semibold text-[#17211e]">Restore generated version?</h2>
-          <p className="mt-2 text-pretty text-sm leading-6 text-[#64726d]">Your saved edits for this {materialType === "cover-letter" ? "cover letter" : "resume"} will be removed. The original AI draft will remain available.</p>
-          <div className="mt-6 flex justify-end gap-2">
-            <button type="button" onClick={() => restoreDialog.current?.close()} className="h-10 rounded-xl px-4 text-sm font-semibold text-[#53635e] hover:bg-[#f0f3f2]">Cancel</button>
-            <button type="button" disabled={saving} onClick={() => void restoreGenerated()} className="h-10 rounded-xl bg-[#8d362d] px-4 text-sm font-semibold text-white hover:bg-[#7c2e27] disabled:opacity-50">Restore original</button>
-          </div>
-        </div>
-      </dialog>
-
-      <dialog ref={leaveDialog} aria-labelledby="leave-title" className="m-auto w-11/12 max-w-md rounded-2xl border border-[#dce4e1] bg-white p-0 shadow-xl backdrop:bg-black/40">
-        <div className="p-6">
-          <h2 id="leave-title" className="text-balance text-lg font-semibold text-[#17211e]">Discard unsaved changes?</h2>
-          <p className="mt-2 text-pretty text-sm leading-6 text-[#64726d]">Save this draft before returning to the workspace if you want to keep your latest changes.</p>
-          <div className="mt-6 flex justify-end gap-2">
-            <button type="button" onClick={() => leaveDialog.current?.close()} className="h-10 rounded-xl px-4 text-sm font-semibold text-[#53635e] hover:bg-[#f0f3f2]">Keep editing</button>
-            <button type="button" onClick={() => router.push("/")} className="h-10 rounded-xl bg-[#8d362d] px-4 text-sm font-semibold text-white hover:bg-[#7c2e27]">Discard and leave</button>
-          </div>
-        </div>
-      </dialog>
     </div>
   );
 }
 
-export function MaterialEditorPage({ jobId, materialType }: { jobId: string; materialType: MaterialType }) {
-  return <Editor jobId={jobId} materialType={materialType} />;
-}
+export const MaterialEditorPage = MaterialEditor;

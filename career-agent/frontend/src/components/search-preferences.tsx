@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, CheckCircle2, MapPin, Plus, Save, Trash2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, MapPin, Plus, Save, Trash2, Sliders, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { AuthScreen } from "@/components/auth-screen";
@@ -16,18 +16,6 @@ async function responseError(response: Response) {
   } catch {
     return `Request failed with status ${response.status}.`;
   }
-}
-
-function LoadingPage() {
-  return (
-    <main className="min-h-dvh bg-[#f5f7f7] px-4 py-10" aria-label="Loading search preferences">
-      <div className="mx-auto max-w-3xl space-y-5">
-        <div className="h-8 w-72 rounded bg-[#e3e9e7]" />
-        <div className="h-56 rounded-2xl border border-[#dce4e1] bg-white" />
-        <div className="h-72 rounded-2xl border border-[#dce4e1] bg-white" />
-      </div>
-    </main>
-  );
 }
 
 export function SearchPreferencesPage() {
@@ -67,7 +55,14 @@ export function SearchPreferencesPage() {
     void load();
   }, [request, user]);
 
-  if (authLoading || (user && loading)) return <LoadingPage />;
+  if (authLoading || (user && loading)) {
+    return (
+      <div className="flex min-h-dvh items-center justify-center bg-[#080c0e]">
+        <span className="size-5 animate-spin rounded-full border-2 border-emerald-500/30 border-t-emerald-400" />
+      </div>
+    );
+  }
+
   if (!user) return <AuthScreen />;
 
   const updateTitle = (index: number, value: string) => {
@@ -99,71 +94,167 @@ export function SearchPreferencesPage() {
         body: JSON.stringify(preferences),
       });
       if (!response.ok) throw new Error(await responseError(response));
-      setPreferences(await response.json() as SearchPreferences);
       setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not save preferences.");
+      setError(caught instanceof Error ? caught.message : "Failed to save.");
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <div className="min-h-dvh bg-[#f5f7f7]">
-      <header className="border-b border-[#dce4e1] bg-white">
-        <div className="mx-auto flex h-16 max-w-3xl items-center px-4 sm:px-6">
-          <Link href="/" className="inline-flex items-center gap-2 text-sm font-semibold text-[#42504b] hover:text-[#0f6b55]">
-            <ArrowLeft className="size-4" /> Back to jobs
+    <div className="relative min-h-dvh overflow-x-hidden bg-[#080c0e] text-slate-100 pb-20">
+      <div className="ambient-glow-careers" />
+
+      {/* Header */}
+      <header className="sticky top-0 z-40 border-b border-white/5 bg-[#080c0e]/85 backdrop-blur-xl">
+        <div className="mx-auto flex h-16 max-w-4xl items-center justify-between px-4 sm:px-6">
+          <Link
+            href="/jobs"
+            className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:bg-white/10 hover:text-white"
+          >
+            <ArrowLeft className="size-3.5" />
+            <span>Back to Careers</span>
           </Link>
+          <span className="font-display text-sm font-bold text-white">Search Preferences</span>
+          <button
+            onClick={save}
+            disabled={saving}
+            className="flex items-center gap-1.5 rounded-xl bg-emerald-500 px-4 py-1.5 text-xs font-semibold text-[#080c0e] shadow-[0_0_15px_rgba(16,185,129,0.3)] transition hover:bg-emerald-400 active:scale-[0.98] disabled:opacity-50"
+          >
+            <Save className="size-3.5" />
+            <span>{saving ? "Saving…" : "Save"}</span>
+          </button>
         </div>
       </header>
 
-      <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
-        <p className="text-sm font-semibold text-[#0f6b55]">AGENT SETTINGS</p>
-        <h1 className="mt-2 text-balance text-3xl font-semibold text-[#17211e]">Search preferences</h1>
-        <p className="mt-2 max-w-2xl text-pretty leading-6 text-[#64726d]">Choose the roles and locations the agent should search. Changes apply to future runs.</p>
+      {/* Form Workspace */}
+      <main className="relative z-10 mx-auto max-w-4xl px-4 py-8 sm:px-6">
+        <div className="mb-8">
+          <h1 className="font-display text-2xl font-bold text-white sm:text-3xl">Career Search Parameters</h1>
+          <p className="mt-1 text-xs text-slate-400">
+            Configure the hard criteria used by the deterministic pre-filter and Gemini 3.6 Flash evaluation engine.
+          </p>
+        </div>
 
-        <form onSubmit={save} className="mt-8 space-y-5">
-          <section className="rounded-2xl border border-[#dce4e1] bg-white p-5 shadow-sm sm:p-6">
-            <div className="flex items-start justify-between gap-4">
-              <div><h2 className="text-lg font-semibold text-[#25312d]">Target positions</h2><p className="mt-1 text-pretty text-sm text-[#6a7772]">A posting must match at least one of these titles.</p></div>
-              <span className="text-xs font-semibold tabular-nums text-[#7a8782]">{preferences.target_titles.length}/15</span>
+        {saved && (
+          <div className="mb-6 rounded-2xl border border-emerald-500/30 bg-emerald-950/40 p-4 text-xs text-emerald-300">
+            ✓ Search preferences saved to Firestore. Subsequent pipeline runs will evaluate against these updated parameters.
+          </div>
+        )}
+
+        {error && (
+          <div className="mb-6 rounded-2xl border border-rose-500/30 bg-rose-950/40 p-4 text-xs text-rose-300">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={save} className="space-y-8">
+          {/* Target Titles */}
+          <section className="glass-panel rounded-3xl p-6 border border-white/10 space-y-4">
+            <div className="flex items-center justify-between border-b border-white/5 pb-3">
+              <div>
+                <h3 className="font-display text-base font-bold text-white">Target Job Titles</h3>
+                <p className="text-xs text-slate-400">ATS postings must match at least one of these title patterns</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreferences((p) => ({ ...p, target_titles: [...p.target_titles, ""] }))}
+                className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-emerald-400 hover:bg-white/10"
+              >
+                <Plus className="size-3.5" /> Add Title
+              </button>
             </div>
-            <div className="mt-5 space-y-3">
-              {preferences.target_titles.map((title, index) => (
-                <div key={index} className="flex gap-2">
-                  <label className="flex-1"><span className="sr-only">Position {index + 1}</span><input required value={title} onChange={(event) => updateTitle(index, event.target.value)} placeholder="e.g. Machine Learning Engineer" className="h-11 w-full rounded-xl border border-[#cfd9d5] px-3 text-sm" /></label>
-                  <button type="button" aria-label={`Remove position ${index + 1}`} disabled={preferences.target_titles.length === 1} onClick={() => setPreferences((current) => ({ ...current, target_titles: current.target_titles.filter((_, item) => item !== index) }))} className="grid size-11 place-items-center rounded-xl text-[#8d362d] hover:bg-[#fbf3f2] disabled:cursor-not-allowed disabled:opacity-35"><Trash2 className="size-4" /></button>
+
+            <div className="space-y-3">
+              {preferences.target_titles.map((title, idx) => (
+                <div key={idx} className="flex items-center gap-3">
+                  <input
+                    value={title}
+                    onChange={(e) => updateTitle(idx, e.target.value)}
+                    placeholder="e.g. Senior AI Engineer, Full Stack Developer"
+                    className="h-10 flex-1 rounded-xl border border-white/10 bg-[#0d1317] px-3.5 text-xs text-white placeholder:text-slate-600 focus:border-emerald-500/50 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setPreferences((p) => ({ ...p, target_titles: p.target_titles.filter((_, i) => i !== idx) }))}
+                    className="rounded-lg p-2 text-slate-500 hover:bg-rose-500/10 hover:text-rose-400"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
                 </div>
               ))}
             </div>
-            <button type="button" disabled={preferences.target_titles.length >= 15} onClick={() => setPreferences((current) => ({ ...current, target_titles: [...current.target_titles, ""] }))} className="mt-4 inline-flex h-10 items-center gap-2 rounded-xl border border-[#cfd9d5] px-4 text-sm font-semibold text-[#42504b] hover:bg-[#f7f9f8] disabled:opacity-45"><Plus className="size-4" /> Add position</button>
           </section>
 
-          <section className="rounded-2xl border border-[#dce4e1] bg-white p-5 shadow-sm sm:p-6">
-            <div className="flex items-start justify-between gap-4">
-              <div><h2 className="inline-flex items-center gap-2 text-lg font-semibold text-[#25312d]"><MapPin className="size-5 text-[#0f6b55]" /> Locations</h2><p className="mt-1 text-pretty text-sm text-[#6a7772]">Add up to five local or international search areas and select how you want to work there.</p></div>
-              <span className="text-xs font-semibold tabular-nums text-[#7a8782]">{preferences.location_preferences.length}/5</span>
+          {/* Location Preferences */}
+          <section className="glass-panel rounded-3xl p-6 border border-white/10 space-y-4">
+            <div className="flex items-center justify-between border-b border-white/5 pb-3">
+              <div>
+                <h3 className="font-display text-base font-bold text-white">Location & Work Modes</h3>
+                <p className="text-xs text-slate-400">Specify allowed geographic regions or global remote</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreferences((p) => ({ ...p, location_preferences: [...p.location_preferences, emptyLocation()] }))}
+                className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-emerald-400 hover:bg-white/10"
+              >
+                <Plus className="size-3.5" /> Add Location
+              </button>
             </div>
-            <div className="mt-5 space-y-3">
-              {preferences.location_preferences.map((item, index) => (
-                <div key={index} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_150px_44px]">
-                  <label><span className="sr-only">Location {index + 1}</span><input required value={item.location} onChange={(event) => updateLocation(index, { location: event.target.value })} placeholder="e.g. Bengaluru, India" className="h-11 w-full rounded-xl border border-[#cfd9d5] px-3 text-sm" /></label>
-                  <label><span className="sr-only">Work mode for {item.location || `location ${index + 1}`}</span><select value={item.work_mode} onChange={(event) => updateLocation(index, { work_mode: event.target.value as WorkMode })} className="h-11 w-full rounded-xl border border-[#cfd9d5] bg-white px-3 text-sm"><option value="both">On-site + remote</option><option value="onsite">On-site</option><option value="remote">Remote</option></select></label>
-                  <button type="button" aria-label={`Remove location ${index + 1}`} disabled={preferences.location_preferences.length === 1} onClick={() => setPreferences((current) => ({ ...current, location_preferences: current.location_preferences.filter((_, itemIndex) => itemIndex !== index) }))} className="grid size-11 place-items-center rounded-xl text-[#8d362d] hover:bg-[#fbf3f2] disabled:cursor-not-allowed disabled:opacity-35"><Trash2 className="size-4" /></button>
+
+            <div className="space-y-3">
+              {preferences.location_preferences.map((loc, idx) => (
+                <div key={idx} className="flex flex-wrap items-center gap-3">
+                  <input
+                    value={loc.location}
+                    onChange={(e) => updateLocation(idx, { location: e.target.value })}
+                    placeholder="e.g. Remote, San Francisco, London"
+                    className="h-10 flex-1 min-w-[180px] rounded-xl border border-white/10 bg-[#0d1317] px-3.5 text-xs text-white placeholder:text-slate-600 focus:border-emerald-500/50 focus:outline-none"
+                  />
+                  <select
+                    value={loc.work_mode}
+                    onChange={(e) => updateLocation(idx, { work_mode: e.target.value as WorkMode })}
+                    className="h-10 rounded-xl border border-white/10 bg-[#0d1317] px-3 text-xs text-slate-300 focus:border-emerald-500/50 focus:outline-none"
+                  >
+                    <option value="remote">Remote Only</option>
+                    <option value="onsite">On-Site</option>
+                    <option value="hybrid">Hybrid</option>
+                    <option value="both">Any Mode</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => setPreferences((p) => ({ ...p, location_preferences: p.location_preferences.filter((_, i) => i !== idx) }))}
+                    className="rounded-lg p-2 text-slate-500 hover:bg-rose-500/10 hover:text-rose-400"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
                 </div>
               ))}
             </div>
-            <button type="button" disabled={preferences.location_preferences.length >= 5} onClick={() => setPreferences((current) => ({ ...current, location_preferences: [...current.location_preferences, emptyLocation()] }))} className="mt-4 inline-flex h-10 items-center gap-2 rounded-xl border border-[#cfd9d5] px-4 text-sm font-semibold text-[#42504b] hover:bg-[#f7f9f8] disabled:opacity-45"><Plus className="size-4" /> Add location</button>
           </section>
 
-          <section className="rounded-2xl border border-[#dce4e1] bg-white p-5 shadow-sm sm:p-6">
-            <label className="flex cursor-pointer items-start gap-3"><input type="checkbox" checked={preferences.needs_visa_sponsorship} onChange={(event) => { setSaved(false); setPreferences((current) => ({ ...current, needs_visa_sponsorship: event.target.checked })); }} className="mt-1 size-4 accent-[#0f6b55]" /><span><span className="block font-semibold text-[#25312d]">I need visa sponsorship for international on-site roles</span><span className="mt-1 block text-pretty text-sm leading-6 text-[#6a7772]">The agent will only keep early-career international on-site jobs that explicitly offer sponsorship.</span></span></label>
+          {/* Visa Sponsorship Toggle */}
+          <section className="glass-panel rounded-3xl p-6 border border-white/10">
+            <label className="flex items-center justify-between cursor-pointer">
+              <div>
+                <span className="font-display text-sm font-bold text-white block">Requires Visa Sponsorship</span>
+                <span className="text-xs text-slate-400 block mt-0.5">
+                  When enabled, postings stating "no sponsorship available" will be flagged as unmet requirements.
+                </span>
+              </div>
+              <input
+                type="checkbox"
+                checked={preferences.needs_visa_sponsorship}
+                onChange={(e) => {
+                  setSaved(false);
+                  setPreferences((p) => ({ ...p, needs_visa_sponsorship: e.target.checked }));
+                }}
+                className="size-5 rounded border-white/20 bg-[#0d1317] text-emerald-500 focus:ring-emerald-500/20"
+              />
+            </label>
           </section>
-
-          {error && <p role="alert" className="rounded-xl border border-[#efc7c2] bg-[#fff5f3] px-4 py-3 text-sm text-[#8d362d]">{error}</p>}
-          {saved && <p role="status" className="inline-flex items-center gap-2 text-sm font-semibold text-[#0f6b55]"><CheckCircle2 className="size-4" /> Preferences saved</p>}
-          <div className="flex justify-end"><button disabled={saving} className="inline-flex h-11 items-center gap-2 rounded-xl bg-[#0f6b55] px-5 text-sm font-semibold text-white hover:bg-[#0a5947] disabled:opacity-60"><Save className="size-4" /> {saving ? "Saving…" : "Save preferences"}</button></div>
         </form>
       </main>
     </div>

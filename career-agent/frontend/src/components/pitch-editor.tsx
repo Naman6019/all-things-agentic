@@ -1,6 +1,19 @@
 "use client";
 
-import { ArrowLeft, Check, Copy, FileText, RotateCcw, Send } from "lucide-react";
+import { 
+  ArrowLeft, 
+  Check, 
+  Copy, 
+  ExternalLink, 
+  RotateCcw, 
+  Save, 
+  Send, 
+  Sparkles, 
+  DollarSign, 
+  User, 
+  Link2,
+  BriefcaseBusiness
+} from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
@@ -55,6 +68,7 @@ export function PitchEditorPage({ leadId }: { leadId: string }) {
       });
       if (!response.ok) throw new Error("Could not save pitch.");
       setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save.");
     } finally {
@@ -63,6 +77,7 @@ export function PitchEditorPage({ leadId }: { leadId: string }) {
   }
 
   async function reset() {
+    if (!confirm("Reset back to original Gemini AI pitch draft?")) return;
     setSaving(true); setError("");
     try {
       const response = await request("/api/pitch", {
@@ -86,7 +101,6 @@ export function PitchEditorPage({ leadId }: { leadId: string }) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Fallback for non-HTTPS contexts (gcloud proxy)
       const textarea = document.createElement("textarea");
       textarea.value = editedPitch;
       document.body.appendChild(textarea);
@@ -98,102 +112,166 @@ export function PitchEditorPage({ leadId }: { leadId: string }) {
     }
   }
 
-  if (loading) {
-    return (
-      <main className="grid min-h-dvh place-items-center bg-[#f5f7f7]">
-        <span className="size-4 rounded-full border-2 border-[#b5c9c2] border-t-[#8b423a]" />
-      </main>
-    );
-  }
-
-  if (!lead) {
-    return (
-      <main className="grid min-h-dvh place-items-center bg-[#f5f7f7]">
-        <p className="text-sm text-[#64726d]">{error || "No pitch found."}</p>
-      </main>
-    );
-  }
-
-  const isEdited = Boolean(lead.pitch_edited_at);
-
   return (
-    <div className="min-h-dvh bg-[#f5f7f7]">
-      <header className="border-b border-[#dce4e1] bg-white">
-        <div className="mx-auto flex h-16 max-w-[800px] items-center gap-3 px-4 sm:px-6 lg:px-8">
-          <Link href="/freelance" className="grid size-9 place-items-center rounded-lg text-[#53635e] hover:bg-[#f0f3f2]">
-            <ArrowLeft className="size-4" />
-          </Link>
-          <FileText className="size-4 text-[#8b423a]" />
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-[#17211e]">{lead.title}</p>
-            <p className="truncate text-xs text-[#7a8782]">{lead.client}</p>
+    <div className="relative min-h-dvh overflow-x-hidden bg-[#080c0e] text-slate-100 pb-20">
+      <div className="ambient-glow-studio" />
+
+      {/* Header */}
+      <header className="sticky top-0 z-40 border-b border-white/5 bg-[#080c0e]/85 backdrop-blur-xl">
+        <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4 sm:px-6">
+          <div className="flex items-center gap-3">
+            <Link
+              href="/freelance"
+              className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:bg-white/10 hover:text-white"
+            >
+              <ArrowLeft className="size-3.5" />
+              <span>Back to Studio</span>
+            </Link>
+            <div className="h-4 w-px bg-white/10" />
+            <span className="font-display text-sm font-bold text-white truncate max-w-xs sm:max-w-md">
+              {lead?.title || "Pitch Studio"}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={copyPitch}
+              className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:bg-white/10 hover:text-white"
+            >
+              {copied ? <Check className="size-3.5 text-amber-400" /> : <Copy className="size-3.5" />}
+              <span>{copied ? "Copied" : "Copy Pitch"}</span>
+            </button>
+
+            <button
+              onClick={save}
+              disabled={saving}
+              className="flex items-center gap-1.5 rounded-xl bg-amber-500 px-4 py-1.5 text-xs font-semibold text-[#080c0e] shadow-[0_0_15px_rgba(245,158,11,0.3)] transition hover:bg-amber-400 active:scale-[0.98] disabled:opacity-50"
+            >
+              <Save className="size-3.5" />
+              <span>{saving ? "Saving…" : "Save Changes"}</span>
+            </button>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-[800px] px-4 py-8 sm:px-6 lg:px-8">
-        {lead.reasoning && (
-          <div className="mb-6 rounded-xl border border-[#e0e6e4] bg-white p-4">
-            <p className="text-xs font-semibold text-[#8b423a]">WHY THIS MATCHED</p>
-            <p className="mt-1 text-pretty text-sm leading-6 text-[#42504b]">{lead.reasoning}</p>
+      {/* Main Studio View */}
+      <main className="relative z-10 mx-auto max-w-5xl px-4 py-8 sm:px-6">
+        {loading ? (
+          <div className="flex min-h-[300px] items-center justify-center">
+            <span className="size-5 animate-spin rounded-full border-2 border-amber-500/30 border-t-amber-400" />
           </div>
-        )}
+        ) : error ? (
+          <div className="rounded-2xl border border-rose-500/30 bg-rose-950/30 p-6 text-center text-xs text-rose-300">
+            {error}
+          </div>
+        ) : lead ? (
+          <div className="space-y-6">
+            {/* Lead Context Header Card */}
+            <div className="glass-panel rounded-3xl p-6 border border-white/10">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <span className="text-xs font-mono text-amber-400 uppercase tracking-wider">Freelance Lead Context</span>
+                  <h1 className="font-display text-2xl font-bold text-white mt-1">{lead.title}</h1>
+                  <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-400">
+                    {lead.client && (
+                      <span className="flex items-center gap-1">
+                        <User className="size-3 text-slate-500" />
+                        {lead.client}
+                      </span>
+                    )}
+                    {lead.budget && (
+                      <span className="flex items-center gap-1 font-mono text-amber-300 font-semibold">
+                        <DollarSign className="size-3" />
+                        {lead.budget}
+                      </span>
+                    )}
+                  </div>
+                </div>
 
-        {lead.contact_method && (
-          <div className="mb-6 flex items-center gap-3 rounded-xl border border-[#bcded3] bg-[#f1faf7] px-4 py-3">
-            <Send className="size-4 text-[#0f6b55]" />
-            <div>
-              <p className="text-sm font-medium text-[#25312d]">Send via: {lead.contact_method}</p>
-              {lead.url && <a href={lead.url} target="_blank" rel="noreferrer" className="text-xs text-[#0f6b55] hover:underline">Open the platform →</a>}
+                {lead.url && (
+                  <a
+                    href={lead.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white self-start"
+                  >
+                    <span>Open Client Post</span>
+                    <ExternalLink className="size-3.5" />
+                  </a>
+                )}
+              </div>
+            </div>
+
+            {/* Pitch Editor Workspace */}
+            <div className="glass-card rounded-3xl p-6 border border-white/10 space-y-4">
+              <div className="flex items-center justify-between border-b border-white/5 pb-3">
+                <div>
+                  <h3 className="font-display text-base font-bold text-white">Targeted Client Pitch</h3>
+                  <p className="text-xs text-slate-400">100-200 word direct outreach message tailored to the client's stated problem</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={reset}
+                  className="flex items-center gap-1 text-xs text-slate-400 hover:text-rose-400 transition"
+                >
+                  <RotateCcw className="size-3.5" />
+                  <span>Reset to AI Draft</span>
+                </button>
+              </div>
+
+              {saved && (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-950/40 p-3 text-xs text-amber-300">
+                  ✓ Pitch updated and saved to Firestore.
+                </div>
+              )}
+
+              <textarea
+                value={editedPitch}
+                onChange={(e) => setEditedPitch(e.target.value)}
+                rows={12}
+                className="w-full resize-y rounded-2xl border border-white/10 bg-[#0d1317] p-4 text-sm leading-relaxed text-slate-200 placeholder:text-slate-600 focus:border-amber-500/50 focus:outline-none"
+              />
+
+              {/* Pitch Metadata Chips */}
+              <div className="grid gap-4 sm:grid-cols-2 pt-2">
+                <div className="rounded-2xl border border-white/5 bg-[#0a0f12] p-4 text-xs">
+                  <span className="font-semibold text-slate-300">Suggested Pricing Anchor:</span>
+                  <div className="font-mono text-amber-400 font-bold mt-1 text-sm">
+                    {lead.suggested_rate || "Competitive Fixed / Hourly"}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/5 bg-[#0a0f12] p-4 text-xs">
+                  <span className="font-semibold text-slate-300">Recommended Channel:</span>
+                  <div className="text-slate-300 font-medium mt-1">
+                    {lead.contact_method || "Direct Message / Email"}
+                  </div>
+                </div>
+              </div>
+
+              {/* Relevant Portfolio Links */}
+              {lead.relevant_portfolio && lead.relevant_portfolio.length > 0 && (
+                <div className="rounded-2xl border border-white/5 bg-[#0a0f12] p-4 text-xs">
+                  <span className="font-semibold text-slate-300">Verified Portfolio Links to Include:</span>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {lead.relevant_portfolio.map((link, i) => (
+                      <a
+                        key={i}
+                        href={link}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-amber-300 hover:bg-white/10 font-mono text-[11px]"
+                      >
+                        <Link2 className="size-3" />
+                        <span>{link.replace(/^https?:\/\//, "")}</span>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
-        )}
-
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-[#17211e]">
-            Your pitch {isEdited && <span className="ml-2 rounded-full bg-[#e8f3ef] px-2 py-0.5 text-xs text-[#0f6b55]">Edited</span>}
-          </h2>
-          <div className="flex gap-2">
-            <button type="button" onClick={copyPitch} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#cfd9d5] px-3 text-sm font-medium text-[#42504b] hover:bg-[#f7f9f8]">
-              <Copy className="size-3.5" /> {copied ? "Copied!" : "Copy"}
-            </button>
-            {isEdited && (
-              <button type="button" onClick={reset} disabled={saving} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#cfd9d5] px-3 text-sm font-medium text-[#42504b] hover:bg-[#f7f9f8] disabled:opacity-60">
-                <RotateCcw className="size-3.5" /> Restore AI draft
-              </button>
-            )}
-          </div>
-        </div>
-
-        <textarea
-          value={editedPitch}
-          onChange={(e) => { setEditedPitch(e.target.value); setSaved(false); }}
-          rows={16}
-          className="w-full resize-y rounded-xl border border-[#c8d8d3] bg-white px-4 py-3 text-sm leading-6 text-[#17211e]"
-        />
-
-        {error && <p role="alert" className="mt-4 rounded-lg border border-[#efc7c2] bg-[#fff5f3] px-3 py-2 text-sm text-[#8d362d]">{error}</p>}
-        {saved && <p role="status" className="mt-4 inline-flex items-center gap-2 rounded-lg border border-[#bcded3] bg-[#f1faf7] px-3 py-2 text-sm text-[#0a5d49]"><Check className="size-4" /> Pitch saved.</p>}
-
-        <div className="mt-6 flex items-center gap-3">
-          <button type="button" onClick={save} disabled={saving} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#8b423a] px-4 text-sm font-semibold text-white disabled:opacity-60">
-            {saving ? "Saving…" : "Save pitch"}
-          </button>
-          {lead.url && (
-            <a href={lead.url} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#0f6b55] px-4 text-sm font-semibold text-white hover:bg-[#0a5947]">
-              <Send className="size-4" /> Open platform to send
-            </a>
-          )}
-        </div>
-
-        {lead.relevant_portfolio && lead.relevant_portfolio.length > 0 && (
-          <div className="mt-8 rounded-xl border border-[#e0e6e4] bg-white p-4">
-            <p className="text-xs font-semibold text-[#8b423a]">RELEVANT PORTFOLIO</p>
-            <ul className="mt-2 space-y-1 text-sm text-[#5e6d67]">
-              {lead.relevant_portfolio.map((item) => <li key={item} className="flex gap-2"><span aria-hidden="true">•</span>{item}</li>)}
-            </ul>
-          </div>
-        )}
+        ) : null}
       </main>
     </div>
   );
