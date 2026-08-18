@@ -139,11 +139,20 @@ export function MaterialEditor({ jobId, materialType = "cover-letter" }: { jobId
   const [copied, setCopied] = useState(false);
   const [savedNotice, setSavedNotice] = useState(false);
 
+  const request = useCallback(async (path: string, init: RequestInit = {}) => {
+    if (!user) throw new Error("Sign in is required.");
+    const token = await user.getIdToken();
+    const headers = new Headers(init.headers);
+    headers.set("authorization", `Bearer ${token}`);
+    return fetch(path, { ...init, headers });
+  }, [user]);
+
   const fetchMaterials = useCallback(async () => {
+    if (!user) return;
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`/api/materials?job_id=${encodeURIComponent(jobId)}`);
+      const res = await request(`/api/materials?job_id=${encodeURIComponent(jobId)}`);
       if (!res.ok) throw new Error(await responseError(res));
       const data = (await res.json()) as MaterialsResponse;
       setMaterials(data);
@@ -154,7 +163,7 @@ export function MaterialEditor({ jobId, materialType = "cover-letter" }: { jobId
     } finally {
       setLoading(false);
     }
-  }, [jobId]);
+  }, [jobId, request, user]);
 
   useEffect(() => {
     void fetchMaterials();
@@ -171,7 +180,7 @@ export function MaterialEditor({ jobId, materialType = "cover-letter" }: { jobId
         body.tailored_resume = normalizeResume(resumeData);
       }
 
-      const res = await fetch("/api/materials", {
+      const res = await request("/api/materials", {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
@@ -197,7 +206,7 @@ export function MaterialEditor({ jobId, materialType = "cover-letter" }: { jobId
       } else {
         body.reset_tailored_resume = true;
       }
-      const res = await fetch("/api/materials", {
+      const res = await request("/api/materials", {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),

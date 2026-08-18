@@ -130,11 +130,20 @@ export function CareerDashboard() {
   const [quickAddBusy, setQuickAddBusy] = useState(false);
   const [quickAddResult, setQuickAddResult] = useState<any>(null);
 
+  const request = useCallback(async (path: string, init: RequestInit = {}) => {
+    if (!user) throw new Error("Sign in is required.");
+    const token = await user.getIdToken();
+    const headers = new Headers(init.headers);
+    headers.set("authorization", `Bearer ${token}`);
+    return fetch(path, { ...init, headers });
+  }, [user]);
+
   const fetchJobs = useCallback(async (tab: JobStatus) => {
+    if (!user) return;
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`/api/jobs?status=${tab}`);
+      const res = await request(`/api/jobs?status=${tab}`);
       if (!res.ok) throw new Error(await responseError(res));
       const data = (await res.json()) as JobsResponse;
       const loadedJobs = data.jobs || [];
@@ -148,7 +157,7 @@ export function CareerDashboard() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [request, user]);
 
   useEffect(() => {
     void fetchJobs(activeTab);
@@ -156,7 +165,7 @@ export function CareerDashboard() {
 
   async function updateStatus(jobId: string, status: JobStatus) {
     try {
-      const res = await fetch("/api/applications/status", {
+      const res = await request("/api/applications/status", {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ job_id: jobId, status }),
@@ -178,7 +187,7 @@ export function CareerDashboard() {
     setQuickAddBusy(true);
     setQuickAddResult(null);
     try {
-      const res = await fetch("/api/quick-add", {
+      const res = await request("/api/quick-add", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ url: quickAddUrl, text: quickAddText }),

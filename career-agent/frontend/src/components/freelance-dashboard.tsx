@@ -119,11 +119,20 @@ export function FreelanceDashboard() {
   const [sort, setSort] = useState<SortOption>("newest");
   const [expandedLeadId, setExpandedLeadId] = useState<string | null>(null);
 
+  const request = useCallback(async (path: string, init: RequestInit = {}) => {
+    if (!user) throw new Error("Sign in is required.");
+    const token = await user.getIdToken();
+    const headers = new Headers(init.headers);
+    headers.set("authorization", `Bearer ${token}`);
+    return fetch(path, { ...init, headers });
+  }, [user]);
+
   const fetchLeads = useCallback(async (tab: string) => {
+    if (!user) return;
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`/api/leads?status=${tab}`);
+      const res = await request(`/api/leads?status=${tab}`);
       if (!res.ok) throw new Error(await responseError(res));
       const data = (await res.json()) as LeadsResponse;
       const loadedLeads = data.leads || [];
@@ -137,7 +146,7 @@ export function FreelanceDashboard() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [request, user]);
 
   useEffect(() => {
     void fetchLeads(activeTab);
@@ -145,7 +154,7 @@ export function FreelanceDashboard() {
 
   async function updateStatus(leadId: string, status: string) {
     try {
-      const res = await fetch(`/api/leads/status`, {
+      const res = await request(`/api/leads/status`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ lead_id: leadId, status }),

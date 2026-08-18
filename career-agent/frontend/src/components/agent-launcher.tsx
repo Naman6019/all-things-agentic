@@ -33,9 +33,13 @@ export function AgentLauncher() {
     setEvaluating(true);
     setEvalResult(null);
     try {
+      const headers: Record<string, string> = { "content-type": "application/json" };
+      if (user) {
+        headers["authorization"] = `Bearer ${await user.getIdToken()}`;
+      }
       const res = await fetch("/api/quick-add", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers,
         body: JSON.stringify({ url: quickAddUrl, text: quickAddText }),
       });
       const data = await res.json();
