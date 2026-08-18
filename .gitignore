@@ -1,3 +1,12 @@
 # Local Claude Code settings -- machine-specific, not useful to anyone reading
 # this repo.
 .claude/
+
+# Graphify knowledge graph output -- regenerated locally, not useful in the
+# repo and contains AST cache files that bloat commits.
+graphify-out/
+
+# Local session transcripts and dumps
+new-session*.json
+*.jsonl
+

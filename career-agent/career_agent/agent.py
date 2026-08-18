@@ -25,7 +25,7 @@ from google.adk.models.google_llm import Gemini
 from google.genai import types as genai_types
 
 from . import config
-from .schemas import DraftedMaterials, JobVerdict
+from .schemas import DraftedMaterials, JobVerdict, LeadVerdict, PitchDraft
 
 EVALUATOR_INSTRUCTIONS = """
 You judge ONE job posting against ONE candidate profile. Both are given to you
@@ -166,6 +166,100 @@ drafter_agent = LlmAgent(
     description="Drafts tailored resume bullets and a cover letter for one matched job.",
     instruction=DRAFTER_INSTRUCTIONS,
     output_schema=DraftedMaterials,
+)
+
+
+# --- TalentOS // Studio (Freelance Client Pipeline) ---------------------------
+
+FREELANCE_EVALUATOR_INSTRUCTIONS = """
+You judge ONE freelance gig posting against ONE freelancer profile. Both are
+given to you in the user message. Return only the structured verdict.
+
+Sort every requirement into exactly one of three states, and keep them apart:
+
+- MET: the lead states something the freelancer satisfies (services, stack,
+  budget, timeline).
+- UNMET: the lead states something the freelancer demonstrably fails, e.g.
+  "Looking for agency, profile is solo freelancer" or "Budget $100, profile
+  rate floor is $50/hr and this is a 40-hour job".
+- NOT STATED: the lead is simply silent about it. Most leads never state a
+  budget or exact timeline. This is NOT a failure. Put it in
+  missing_information as something for the freelancer to clarify in the pitch.
+
+Set match=true when nothing is UNMET. A lead with several NOT STATED
+requirements and no UNMET ones is a match. Never reject a lead for being silent,
+and never invent a requirement the lead does not contain.
+
+Also grade match_strength using the actual evidence:
+- strong: the freelancer's services directly match the stated needs and
+  portfolio demonstrates similar work.
+- medium: nothing rules the freelancer out, but evidence of similar work is
+  incomplete.
+- weak: fit is marginal or at least one stated requirement is unmet.
+
+FREELANCE-SPECIFIC POLICY:
+- Budget below the profile's freelance_rate_min (when stated) is UNMET, not a
+  suggestion to negotiate down.
+- "Looking for agency" or "team of 3+" when the profile is a solo freelancer is
+  UNMET.
+- Technology stack not in the freelancer's services list is evaluated honestly:
+  if the lead asks for Shopify and the profile offers React, that is UNMET
+  unless the portfolio demonstrates transferable work.
+- Timeline urgency ("ASAP", "needed yesterday") is NOT a rejection unless the
+  profile's freelance_availability states unavailability.
+- Client reputation, platform prestige, or follower count is never a rejection
+  criterion. Judge fit from the work's stated scope.
+- A lead asking for a technology the freelancer's GitHub repos demonstrate
+  (even if not in the services list) counts as MET -- a repository is proof of
+  work, not a claim.
+
+Unmet requirements must be specific and in plain language -- never a generic
+"not a fit".
+"""
+
+FREELANCE_PITCHER_INSTRUCTIONS = """
+You draft a pitch for ONE freelance lead the freelancer already matched. Both
+the lead and the freelancer profile are in the user message.
+
+The pitch is NOT a cover letter. It leads with the client's SPECIFIC PAIN
+POINTS and the freelancer's PREVIOUS SIMILAR SOLUTIONS:
+
+- Open by referencing the client's actual problem. Quote or paraphrase their
+  post so they know you read it, not just the title.
+- Cite 1-2 specific projects from the portfolio or GitHub that solved a similar
+  problem. Describe what you built, not just the project name.
+- State your timeline commitment based on freelance_availability. If the lead
+  says "ASAP" and you're available now, say so.
+- Suggest a rate within the profile's range. If the lead states a budget that
+  works, acknowledge it. If the budget is unstated, propose your standard rate.
+- Keep it 150-300 words, in the freelancer's own voice from writing_voice_samples.
+  A pitch that reads like a template is worse than no pitch.
+
+NEVER fabricate projects, metrics, client names, or timelines. Every project
+you cite must come from the profile or the PUBLIC WORK section. A repository
+name alone proves nothing -- describe what it does from its description or
+README.
+
+The contact_method field tells the freelancer WHERE to send this pitch, not
+how to automate sending it. The human always sends -- the agent drafts and
+deep-links, nothing more.
+"""
+
+freelance_evaluator_agent = LlmAgent(
+    model=_model(config.FREELANCE_EVALUATOR_MODEL),
+    name="freelance_lead_evaluator",
+    description="Judges one freelance gig posting against the freelancer's profile.",
+    instruction=FREELANCE_EVALUATOR_INSTRUCTIONS,
+    output_schema=LeadVerdict,
+    generate_content_config=_thinking(config.EVALUATOR_THINKING_LEVEL),
+)
+
+freelance_pitcher_agent = LlmAgent(
+    model=_model(config.FREELANCE_PITCHER_MODEL),
+    name="freelance_pitch_drafter",
+    description="Drafts a targeted pitch for one matched freelance lead.",
+    instruction=FREELANCE_PITCHER_INSTRUCTIONS,
+    output_schema=PitchDraft,
 )
 
 # `adk web .` looks for root_agent.

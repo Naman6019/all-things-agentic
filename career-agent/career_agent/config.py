@@ -1,4 +1,4 @@
-"""Environment + static configuration for the Career Agent job pipeline."""
+"""Environment + static configuration for TalentOS // Careers."""
 from __future__ import annotations
 
 import hashlib
@@ -53,6 +53,12 @@ GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
 # Both default to GEMINI_MODEL, so setting neither changes nothing.
 EVALUATOR_MODEL = os.environ.get("EVALUATOR_MODEL", GEMINI_MODEL)
 DRAFTER_MODEL = os.environ.get("DRAFTER_MODEL", GEMINI_MODEL)
+
+# --- Freelance pipeline models (TalentOS // Studio) ---
+# Same pattern: evaluation is high-volume, pitching is where quality is visible.
+# Both default to GEMINI_MODEL so setting neither changes nothing.
+FREELANCE_EVALUATOR_MODEL = os.environ.get("FREELANCE_EVALUATOR_MODEL", GEMINI_MODEL)
+FREELANCE_PITCHER_MODEL = os.environ.get("FREELANCE_PITCHER_MODEL", GEMINI_MODEL)
 
 # Thinking tokens bill at the output rate and were half of a measured run's
 # cost. Gemini 3.x models think by default; setting this to "low" trades some
@@ -171,6 +177,17 @@ ENABLE_ARBEITNOW = _enabled("ENABLE_ARBEITNOW")
 ENABLE_REMOTIVE = _enabled("ENABLE_REMOTIVE")
 ENABLE_REMOTEOK = _enabled("ENABLE_REMOTEOK")
 ENABLE_JOBICY = _enabled("ENABLE_JOBICY")
+
+# --- Freelance sources (TalentOS // Studio) ---
+# Public hiring boards and freelance feeds -- no scraping, no auto-submit.
+ENABLE_RFORHIRE = _enabled("ENABLE_RFORHIRE", "true")
+ENABLE_WWR_CONTRACT = _enabled("ENABLE_WWR_CONTRACT", "true")
+ENABLE_CONTRA = _enabled("ENABLE_CONTRA", "true")
+ENABLE_PEERLIST = _enabled("ENABLE_PEERLIST", "false")
+
+# Hard cap on unseen leads handed to the model per freelance run. Same rationale
+# as MAX_JOBS_PER_RUN: a single r/forhire megathread can return 50+ posts.
+MAX_LEADS_PER_RUN = int(os.environ.get("MAX_LEADS_PER_RUN", "10"))
 
 # --- Per-run volume cap ---------------------------------------------------------
 # Hard ceiling on how many unseen jobs get handed to the model in one run. This

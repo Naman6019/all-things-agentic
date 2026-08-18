@@ -329,9 +329,9 @@ def render(status: str = "matched", queued: bool = False, error: str = "") -> st
     return (
         "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-        "<title>Career Agent &mdash; job review</title>"
+        "<title>TalentOS // Careers &mdash; job review</title>"
         f"<style>{_STYLE}</style></head><body><div class='wrap'>"
-        "<h1>Career Agent</h1>"
+        "<h1>TalentOS // Careers</h1>"
         f'<div class="sub">{len(apps)} {escape(active[1].lower())} '
         "&middot; the agent drafts and finds; you open the JD and decide</div>"
         f'<div class="tabs">{tabs}</div>'

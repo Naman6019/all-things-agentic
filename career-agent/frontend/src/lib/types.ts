@@ -83,3 +83,43 @@ export type SearchPreferences = {
   location_preferences: LocationPreference[];
   needs_visa_sponsorship: boolean;
 };
+
+// --- TalentOS // Studio (Freelance Client Pipeline) ---
+
+export type LeadStatus = "matched" | "pitched" | "sent" | "replied" | "skipped" | "archived";
+
+export type Lead = {
+  lead_id: string;
+  title: string;
+  client: string;
+  budget?: string;
+  timeline?: string;
+  url?: string;
+  source?: string;
+  posted_at?: string;
+  status: string;
+  match_strength?: "strong" | "medium" | "weak" | "unscored";
+  reasoning?: string;
+  missing_information?: string[];
+  unmet_requirements?: string[];
+  pitch_message?: string;
+  relevant_portfolio?: string[];
+  suggested_rate?: string;
+  contact_method?: string;
+  edited_pitch_message?: string;
+  pitch_edited_at?: string;
+  materials_created_at?: string;
+  evaluated_at?: string;
+};
+
+export type LeadsResponse = {
+  status: string;
+  leads: Lead[];
+};
+
+export type FreelanceProfile = {
+  freelance_niche: string;
+  freelance_availability: string;
+  freelance_services: string[];
+  freelance_portfolio_summary: string;
+};

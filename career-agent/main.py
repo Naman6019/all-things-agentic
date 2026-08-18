@@ -27,7 +27,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
 from career_agent import (
-    board_scout, config, matching, pipeline, profile_ui, quickadd, resume_render, review_groups, webui,
+    board_scout, config, freelance_graph, matching, pipeline, profile_ui, quickadd, resume_render, review_groups, webui,
 )
 from career_agent.schemas import TailoredResume
 from career_agent.storage import firestore_store
@@ -406,6 +406,122 @@ async def discover_boards(max_candidates: int | None = None):
     if max_candidates is not None and not 1 <= max_candidates <= 12:
         raise HTTPException(status_code=400, detail="max_candidates must be between 1 and 12.")
     return await board_scout.run_once(max_candidates=max_candidates)
+
+
+# --- TalentOS // Studio (Freelance Client Pipeline) ---------------------------
+
+
+@app.post("/run-freelance", dependencies=[Depends(require_run_token)])
+async def run_freelance_pipeline_endpoint(max_leads: int | None = None):
+    """Runs one full pass of the Freelance Client Pipeline.
+
+    Same control flow pattern as /run: fetch leads from public freelance
+    boards, evaluate each one against the freelancer's profile, draft pitches
+    for matches, and send one digest email. The human always sends the pitch
+    on the platform itself.
+    """
+    if max_leads is not None and not 1 <= max_leads <= config.MAX_LEADS_PER_RUN:
+        raise HTTPException(
+            status_code=400,
+            detail=f"max_leads must be between 1 and {config.MAX_LEADS_PER_RUN}.",
+        )
+    return await freelance_graph.run_freelance_pipeline(
+        uuid.uuid4().hex[:8], max_leads=max_leads
+    )
+
+
+@app.get("/api/leads")
+def api_leads(status: str = "matched"):
+    """Freelance leads in the given status, as JSON for the frontend."""
+    statuses = ["matched", "pitched"] if status == "matched" else [status]
+    leads = firestore_store.get_leads_by_status(statuses)
+    return {"status": status, "leads": leads}
+
+
+class LeadStatusRequest(BaseModel):
+    lead_id: str
+    status: str
+
+
+class PitchEditRequest(BaseModel):
+    lead_id: str
+    pitch_message: str | None = None
+    reset: bool = False
+
+
+class FreelanceProfileRequest(BaseModel):
+    freelance_niche: str
+    freelance_availability: str
+    freelance_services: list[str]
+    freelance_portfolio_summary: str
+
+
+@app.get("/api/leads/{lead_id}")
+def api_lead(lead_id: str):
+    """Returns the pitch and evaluation for one lead."""
+    lead_doc = firestore_store.get_lead(lead_id)
+    if not lead_doc:
+        raise HTTPException(status_code=404, detail="No pitch for that lead_id.")
+    return lead_doc
+
+
+@app.put("/api/leads/{lead_id}/status")
+def api_lead_status(lead_id: str, status: str = Form(...)):
+    """Updates the human-owned lead status (sent, replied, archived)."""
+    if status not in ("sent", "replied", "archived", "matched", "pitched"):
+        raise HTTPException(status_code=400, detail="Invalid lead status.")
+    firestore_store.set_lead_status(lead_id, status)
+    return {"lead_id": lead_id, "status": status}
+
+
+@app.put("/api/pitch")
+def api_save_pitch(payload: PitchEditRequest):
+    """Saves a human-edited pitch or restores the generated draft."""
+    if not firestore_store.get_lead(payload.lead_id):
+        raise HTTPException(status_code=404, detail="No lead for that lead_id.")
+    if payload.reset:
+        firestore_store.save_pitch_edit(payload.lead_id, None)
+        return {"lead_id": payload.lead_id, "edited": False}
+    value = (payload.pitch_message or "").strip()
+    if not value:
+        raise HTTPException(status_code=400, detail="Pitch cannot be empty.")
+    firestore_store.save_pitch_edit(payload.lead_id, value)
+    return {"lead_id": payload.lead_id, "edited": True}
+
+
+@app.get("/api/freelance-profile")
+def api_freelance_profile():
+    """Return the freelance overlay fields for the current profile."""
+    profile = config.load_candidate_profile()
+    return {
+        "freelance_niche": profile.freelance_niche,
+        "freelance_availability": profile.freelance_availability,
+        "freelance_services": profile.freelance_services,
+        "freelance_portfolio_summary": profile.freelance_portfolio_summary,
+    }
+
+
+@app.put("/api/freelance-profile")
+def api_save_freelance_profile(payload: FreelanceProfileRequest):
+    """Update freelance overlay fields without overwriting job-search fields."""
+    profile = config.load_candidate_profile()
+    existing = firestore_store.get_profile() or asdict(profile)
+    updated = {
+        **existing,
+        "freelance_niche": payload.freelance_niche.strip(),
+        "freelance_availability": payload.freelance_availability.strip(),
+        "freelance_services": [s.strip() for s in payload.freelance_services if s.strip()],
+        "freelance_portfolio_summary": payload.freelance_portfolio_summary.strip(),
+    }
+    config._profile_from_dict(updated)
+    firestore_store.save_profile(updated)
+    config.invalidate_profile_cache()
+    return {
+        "freelance_niche": updated["freelance_niche"],
+        "freelance_availability": updated["freelance_availability"],
+        "freelance_services": updated["freelance_services"],
+        "freelance_portfolio_summary": updated["freelance_portfolio_summary"],
+    }
 
 
 if __name__ == "__main__":

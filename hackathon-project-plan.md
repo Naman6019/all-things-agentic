@@ -4,10 +4,10 @@ Two submissions, each aimed squarely at one track's rubric:
 
 | # | Project | Track | Deadline pacing |
 |---|---|---|---|
-| 1 | **Career Agent** (Job Search + Freelance Client workflows) | Taskmaster | Primary build — do this first |
-| 2 | **Wireframe Assistant** | Collaborative Partner | Secondary build — only after #1 has a working end-to-end demo |
+| 1 | **TalentOS // Careers** (Job Search Pipeline) | Taskmaster | Primary build — do this first |
+| 2 | **TalentOS // Studio** (Freelance Client Pipeline) | Taskmaster | Secondary build — after #1 has a working end-to-end demo |
 
-Today is Aug 11, submission closes Aug 31 (5:00pm PDT) — 20 days. Treat Career Agent's Job workflow as the thing that must work end-to-end no matter what; everything else is additive.
+Today is Aug 11, submission closes Aug 31 (5:00pm PDT) — 20 days. Treat TalentOS // Careers as the thing that must work end-to-end no matter what; everything else is additive.
 
 ---
 
@@ -24,7 +24,7 @@ Design consequence: the agent does all the *work* — finding, matching, draftin
 
 ---
 
-## Part 1 — Career Agent (Taskmaster track)
+## Part 1 — TalentOS // Careers (Taskmaster track)
 
 ### Why this fits Taskmaster
 Event-driven (new listing/lead appears) → autonomous routing across systems (job board → matcher → resume tailoring → contact lookup → draft → notify) → ends in a concrete artifact, not a chat reply. Exactly the "don't just write text, take action" bar the track sets.
@@ -73,41 +73,40 @@ Must-have for a working demo: Job workflow, one or two board sources, matching +
 
 ---
 
-## Part 2 — Wireframe Assistant (Collaborative Partner track)
+## Part 2 — TalentOS // Studio (Freelance Client Pipeline)
 
-### Why this fits Collaborative Partner
-Stateful, multi-turn, guides the user step by step, explicitly captures feedback and adapts — this is close to verbatim what the track's own example describes ("turns a vague idea into a wireframe, learns your brand preferences from your corrections").
+### Why this fits Taskmaster
+Same event-driven, action-ending pattern as Careers: new lead appears → autonomous routing across systems (board → matcher → pitch drafter → notify) → ends in a concrete artifact (a drafted pitch with a deep-link to send), not a chat reply. Both agents share one product, one profile, one auth — a unified opportunity intelligence workspace.
 
 ### Flow
-1. User describes a screen/feature idea in plain language — no design vocabulary required.
-2. Agent asks a short round of clarifying questions: purpose of the screen, key actions, platform (mobile/web), audience, must-have elements. Guided, not a blank canvas.
-3. Agent generates a **layout spec** (structured JSON: sections, components, rough positions/hierarchy) and renders it deterministically as a low-fidelity wireframe (boxes-and-labels HTML/SVG, Balsamiq-style) — more reliable and faster to demo live than raw image generation, and it's directly viewable in a browser, which satisfies the "hosted project" recommendation.
-4. User gives feedback in plain language ("move nav to top," "one CTA per screen," "I don't like this for onboarding") — agent revises the spec and re-renders, in the same session.
-5. **Memory** (the track-defining piece): the agent extracts durable preference signals from your corrections — "prefers top nav over sidebar," "single-CTA-per-screen," brand color — and persists them to a style profile in Firestore, so the *next* session starts closer to your taste instead of zero.
-6. Optional bonus for a stronger demo: a 2-question taste calibration on first run (show two layout options, pick one) to seed the profile before you've corrected anything.
-
-### Architecture
-Cloud Run (ADK conversational agent, session state) → Gemini 3.6 Flash on Vertex's global endpoint, same as Career Agent (drives clarifying questions, spec generation, interprets feedback deltas) → Firestore (persistent style profile + wireframe version history) → a small rendering layer (layout JSON → HTML/SVG) → simple web UI for viewing/iterating.
-
-Reuse from Career Agent: same GCP project (`allthingsagentic-505213`), same Firestore instance under its own collections, same Vertex model config, and the same `load_dotenv`/`global`-endpoint setup that Phase 0 pinned down. This is a separate agent service, not a second workflow inside the existing one — Career Agent's `main.py` is a stateless single-pass runner, whereas this one is genuinely multi-turn and will need a real (non-`InMemory`) SessionService to survive across requests.
+1. **Trigger**: same Cloud Scheduler, or on-demand.
+2. **Find leads** — public hiring boards and freelance feeds:
+   - **r/forhire** ("Hiring" posts) — public RSS, no auth.
+   - **We Work Remotely** (contract/freelance category) — public RSS.
+   - **Contra / Peerlist** — public project listings, monitor only.
+3. **Enrich** each lead with public info for personalization.
+4. **Draft outreach** (LLM) — a pitch referencing the freelancer's portfolio/past work relevant to the lead's stated pain points.
+5. **Approval gate**: the agent drafts the pitch and provides a deep-link to the platform. The human clicks send — no exceptions, no auto-submission.
+6. **Notify** — once a batch is drafted, the agent sends a digest: who, via what channel, link to the pitch.
+7. **State**: Firestore `leads`, `leads_seen`, `pitches`, `freelance_runs`.
 
 ### MVP cut line
-Must-have: one clarifying round, spec generation, rendered wireframe, at least one feedback-revision loop, and the preference persisting to Firestore and visibly affecting a second session (this is what proves "adapts," not just "chats"). Multi-screen flows, exports, and the taste-calibration quiz are stretch goals.
+Must-have for a working demo: one or two freelance sources, lead evaluation with gap explanation, drafted pitch with deep-link, digest output.
 
 ---
 
-## Tech requirement checklist (applies to both submissions)
+## Tech requirement checklist
 
 - [x] Gemini 3.5 or newer via Gemini API or Vertex AI — running on `gemini-3.6-flash` via Vertex. Note it is only served on Vertex's **global** endpoint; regional locations 404.
-- [x] At least one Google agent framework — ADK for both submissions, per this plan
-- [ ] At least one GCP infra service — Firestore is live (native mode, `us-central1`, project `allthingsagentic-505213`); Cloud Run deployment still pending
+- [x] At least one Google agent framework — ADK for both agents, per this plan
+- [x] At least one GCP infra service — Firestore is live (native mode, `us-central1`, project `allthingsagentic-505213`); Cloud Run service deployed and running on a 12-hourly schedule
 - [ ] Demo video shows the backend actually running on Google Cloud (Cloud Run dashboard / Vertex AI logs / the `.run.app` URL)
-- [ ] Architecture diagram, README with spin-up steps, code repo
+- [x] Architecture diagram, README with spin-up steps, code repo
 
 ## Scope decisions (resolved)
 1. ~~**Job boards**~~ — Resolved: targeting mid-to-large companies, tracked through their own career portals (Greenhouse/Lever/Ashby/SmartRecruiters/Workday) plus popular job sites (LinkedIn, Indeed, Glassdoor, etc.) via aggregator feeds + quick-add, per the source strategy in Workflow A.
 2. ~~**Contact-finding**~~ — Resolved: start with publicly listed info; fall back to an email-finder API (Hunter.io) when public info isn't reliable enough.
 3. ~~**Freelance leads**~~ — Resolved: MVP leans on public hiring boards first; target-list upload is a later add-on.
 4. ~~**Send channel**~~ — Resolved: Gmail API (your account) for the notification digest and any auto-sent plain-email outreach.
-5. ~~**Build order**~~ — Resolved: Job workflow, then Freelance, then Wireframe Assistant, in that order.
-6. ~~**Second submission**~~ — Resolved (Aug 11): the Wireframe Assistant stays **in scope**. The hackathon allows two submissions, so entering the Collaborative Partner track costs nothing but build time and is a second, independent shot at placing. It stays strictly second in the build order: it starts only once Career Agent's Job workflow is deployed and filmed, because a half-finished second entry is worth less than a finished first one. If the calendar gets tight, this is what gets dropped — see the trim order in the MVP cut lines.
+5. ~~**Build order**~~ — Resolved: TalentOS // Careers first, then TalentOS // Studio. Both are Taskmaster track submissions — one product, two agents.
+6. ~~**Second submission**~~ — Resolved (Aug 19): the Wireframe Assistant / Collaborative Partner track is **out of scope**. Both agents (Careers + Studio) submit under the Taskmaster track as a single unified product. Focus entirely on making both agents excellent.

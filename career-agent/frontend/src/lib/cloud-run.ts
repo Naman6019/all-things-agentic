@@ -11,10 +11,10 @@ export class UpstreamError extends Error {
   }
 }
 
-export async function callCareerAgent(path: string, init: RequestInit = {}) {
-  const baseUrl = process.env.CAREER_AGENT_API_URL?.replace(/\/$/, "");
+export async function callTalentOS(path: string, init: RequestInit = {}) {
+  const baseUrl = (process.env.TALENTOS_API_URL || process.env.CAREER_AGENT_API_URL)?.replace(/\/$/, "");
   if (!baseUrl) {
-    throw new UpstreamError("CAREER_AGENT_API_URL is not configured.", 503);
+    throw new UpstreamError("TALENTOS_API_URL is not configured.", 503);
   }
 
   const headers = new Headers(init.headers);
@@ -35,7 +35,7 @@ export async function callCareerAgent(path: string, init: RequestInit = {}) {
   });
 
   if (!response.ok) {
-    let detail = `Career Agent returned ${response.status}.`;
+    let detail = `TalentOS returned ${response.status}.`;
     try {
       const body = (await response.json()) as { detail?: string };
       detail = body.detail || detail;
@@ -47,3 +47,6 @@ export async function callCareerAgent(path: string, init: RequestInit = {}) {
 
   return response;
 }
+
+// Backwards-compatible alias
+export const callCareerAgent = callTalentOS;

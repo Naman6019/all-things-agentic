@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Career Agent — Job Search Workspace",
-  description: "Review matched roles, understand the evidence, and keep every application moving.",
+  title: "TalentOS — Opportunity Intelligence",
+  description: "TalentOS by AllStackLabs. Autonomous opportunity intelligence and dual-stream career agent.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

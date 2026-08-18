@@ -1,109 +1,139 @@
-# All Things Agentic
+# TalentOS
 
-Hackathon entry for the **Taskmaster** track: an autonomous job search agent
-that finds postings across eight sources, checks each one against a candidate
-profile, tells you exactly which requirement a rejection failed, and drafts
-tailored application materials for the ones that fit.
+An **AllStackLabs** product. Hackathon submission for the **Taskmaster** track: an autonomous opportunity intelligence platform featuring a dual-stream agent pipeline that discovers opportunities across public ATS and freelance feeds, checks each against hard/soft requirements via per-lead reasoning, and generates tailored, high-converting materials — all ending in concrete artifacts rather than chat replies.
 
-It ends in a concrete artifact -- a digest and a reviewable draft -- rather
-than a chat reply.
+---
 
 ## What's here
 
-| | |
+| Directory / File | Description |
 |---|---|
-| [`career-agent/`](career-agent/) | The pipeline. **Start with its [README](career-agent/README.md)** for setup, running, and the honest list of caveats. |
-| [`hackathon-project-plan.md`](hackathon-project-plan.md) | Design rationale, the anti-automation guardrails that shaped the architecture, and scope decisions. |
+| [`career-agent/`](career-agent/) | The core service. **Start with its [README](career-agent/README.md)** for setup, running, architecture, and caveats. |
+| [`hackathon-project-plan.md`](hackathon-project-plan.md) | Design rationale, anti-automation guardrails, and track rubrics. |
+| [`AGENTS.md`](AGENTS.md) | Architectural tenets, repo map, schemas, and developer guide for human and AI contributors. |
 
-## Architecture
+---
+
+## Architecture: Dual-Stream Autonomous Opportunity Pipeline
 
 ```mermaid
 flowchart TB
-    SCHED["Cloud Scheduler<br/>every 12h"]
+    SCHED["Cloud Scheduler<br/>(12h cron cadence)"]
 
-    subgraph SOURCES["Job sources — public APIs, never scraped"]
-        ATS["Company boards<br/>Greenhouse · Lever · Ashby · SmartRecruiters"]
-        AGG["Aggregator feeds<br/>Arbeitnow · Remotive · RemoteOK · Jobicy"]
+    subgraph SOURCES_CAREERS["Careers Ingestion — Public ATS & Aggregators"]
+        ATS["ATS Boards<br/>Greenhouse · Lever · Ashby · SmartRecruiters · Workable"]
+        AGG["Aggregators<br/>Arbeitnow · Remotive · RemoteOK · Jobicy"]
     end
 
-    subgraph RUN["Cloud Run — private, least-privilege SA"]
-        FETCH["1 · Fetch<br/>~2,500 postings"]
-        DEDUPE["2 · Drop already-judged"]
-        FILTER["3 · Pre-filter in Python<br/>title + seniority<br/>~91% dropped, each counted"]
-        CAP["4 · Cap per run"]
-        EVAL["5 · Evaluate — one call per job"]
-        DRAFT["6 · Draft — one call per match"]
-        DIGEST["7 · Digest + review UI"]
+    subgraph SOURCES_STUDIO["Studio Ingestion — Freelance & Gig Feeds"]
+        REDDIT["r/forhire RSS"]
+        WWR["We Work Remotely Contracts"]
+        CONTRA["Contra & Peerlist Feeds"]
     end
 
-    VERTEX["Vertex AI · Gemini 3.6 Flash<br/>structured output"]
-    SM["Secret Manager<br/>candidate profile"]
-    FS[("Firestore<br/>jobs · jobs_seen<br/>applications · runs")]
-    HUMAN(["Human reviews,<br/>opens the JD, applies"])
+    subgraph CLOUD_RUN["TalentOS Engine — Cloud Run (FastAPI + LangGraph)"]
+        subgraph PIPELINE_CAREERS["TalentOS // Careers StateGraph"]
+            FETCH_C["1 · Ingest & Dedupe"]
+            FILTER_C["2 · Deterministic Pre-filter<br/>(Title, Seniority, Location)"]
+            EVAL_C["3 · Evaluator Agent<br/>(3-State Reasoning)"]
+            DRAFT_C["4 · Drafter Agent<br/>(Tailored Resume + Cover Letter)"]
+        end
 
-    SCHED -->|OIDC| FETCH
-    ATS --> FETCH
-    AGG --> FETCH
-    FETCH --> DEDUPE --> FILTER --> CAP --> EVAL
-    EVAL -->|match| DRAFT
-    EVAL -->|no match, with reasons| DIGEST
-    DRAFT --> DIGEST
-    DIGEST --> HUMAN
+        subgraph PIPELINE_STUDIO["TalentOS // Studio StateGraph"]
+            FETCH_S["1 · Ingest & Dedupe"]
+            FILTER_S["2 · Pre-filter & Sanitize<br/>(Length & Budget)"]
+            EVAL_S["3 · Freelance Evaluator<br/>(Scope & Tech Stack Fit)"]
+            DRAFT_S["4 · Pitcher Agent<br/>(Targeted 3-Paragraph Pitch)"]
+        end
+    end
 
-    EVAL <--> VERTEX
-    DRAFT <--> VERTEX
-    SM -. mounted at runtime .-> EVAL
-    DEDUPE <--> FS
-    EVAL --> FS
-    DRAFT --> FS
-    DIGEST <--> FS
+    VERTEX["Vertex AI · Gemini 3.6 Flash / 3.5 Flash<br/>(Structured Pydantic Outputs)"]
+    SM["Secret Manager<br/>(Master Candidate Profile)"]
+    FS[("Firestore (Native Mode)<br/>jobs · applications · leads · pitches · runs")]
+
+    subgraph FRONTEND["TalentOS Unified Dashboard (Next.js 15 App Router)"]
+        LAUNCHER["Landing Hub (/)"]
+        CAREERS_UI["Careers Dashboard (/jobs)<br/>Printable Resumes · Cover Letters · Grouped Cards"]
+        STUDIO_UI["Studio Dashboard (/freelance)<br/>Live Lead Feed · Pitch Editor · Deep-Link Dispatch"]
+    end
+
+    HUMAN(["Human-in-the-Loop<br/>Reviews draft, copies pitch / clicks apply"])
+
+    SCHED -->|OIDC POST /run| FETCH_C
+    SCHED -->|OIDC POST /run-freelance| FETCH_S
+
+    SOURCES_CAREERS --> FETCH_C
+    SOURCES_STUDIO --> FETCH_S
+
+    FETCH_C --> FILTER_C --> EVAL_C --> DRAFT_C
+    FETCH_S --> FILTER_S --> EVAL_S --> DRAFT_S
+
+    EVAL_C <--> VERTEX
+    DRAFT_C <--> VERTEX
+    EVAL_S <--> VERTEX
+    DRAFT_S <--> VERTEX
+
+    SM -. mounted profile .-> EVAL_C
+    SM -. mounted profile .-> EVAL_S
+
+    DRAFT_C --> FS
+    DRAFT_S --> FS
+
+    FS <--> FRONTEND
+    LAUNCHER --> CAREERS_UI
+    LAUNCHER --> STUDIO_UI
+    CAREERS_UI --> HUMAN
+    STUDIO_UI --> HUMAN
 ```
 
-Three things the diagram is meant to make obvious:
+---
 
-- **The model is not the control flow.** Steps 1–4 and 7 are ordinary Python.
-  The model is called once per job to judge it and once per match to draft.
-  Driving the whole loop as one conversation cost ~4× more and could silently
-  skip a job.
-- **The cheap filter runs before the expensive one.** Roughly 91% of postings
-  are dropped deterministically before any model call, and every drop is
-  counted by reason so nothing disappears silently.
-- **The arrow stops at the human.** Nothing here submits an application.
+## Core Architectural Tenets
 
-## How it works
+1. **The Model is NOT the Control Flow**: Ingestion, deduplication, deterministic pre-filtering, rate caps, and persistence are executed in standard Python (via LangGraph state graphs). The LLM is invoked only for qualitative judgment.
+2. **Cheap Filters Before Expensive Evaluation**: Roughly ~91% of irrelevant listings are dropped deterministically before any Vertex AI invocation, with every dropped item accounted for by reason.
+3. **Strict 3-State Qualification Logic**: Requirements are categorized as **MET**, **UNMET**, or **NOT STATED**. Silence in a job description is never treated as a rejection.
+4. **Hard Anti-Automation & Platform Guardrails**: Direct bot submission to protected platforms is strictly forbidden. The system prepares reviewable artifacts; the final apply/send action is strictly reserved for the human.
 
-Cloud Scheduler triggers `POST /run` on Cloud Run. From there the control flow
-is ordinary Python, not the model:
+---
 
-1. **Fetch** from Greenhouse, Lever, Ashby and SmartRecruiters company boards,
-   plus the Arbeitnow, Remotive, RemoteOK and Jobicy aggregator feeds. All
-   free, public and keyless -- roughly 2,500 postings a run.
-2. **Pre-filter** deterministically on title and seniority. About 2,300 are set
-   aside before any model call, and the counts are reported rather than hidden.
-3. **Evaluate** each surviving job in its own isolated model call
-   (Gemini 3.6 Flash on Vertex AI), sorting every requirement into met, unmet,
-   or *not stated* -- a posting being silent about salary is not a rejection.
-4. **Draft** tailored resume bullets and a cover letter for matches only.
-5. **Digest and review** -- an emailed summary plus a read-only web UI showing
-   each match with its JD link, why it matched, and what to verify.
+## The Dual Pipelines
 
-State lives in Firestore, so runs are idempotent and a failed run never loses
-a job.
+### 1. TalentOS // Careers (Full-Time Opportunity Pipeline)
+* **Ingestion**: 4 public ATS platforms (Greenhouse, Lever, Ashby, SmartRecruiters) + direct company portals + 4 open aggregator feeds (~2,500 postings/run).
+* **Board Scout**: Search-grounded ATS board discovery using Google GenAI Search Grounding with strict API validation.
+* **Output Artifacts**: Print-ready tailored HTML resumes, targeted cover letters, email digests, and grouped review cards.
 
-**A human always performs the actual apply.** LinkedIn, Indeed, Glassdoor and
-Wellfound are never scraped, and nothing is ever submitted on the user's
-behalf -- see the guardrails section of the project plan for why that shaped
-the architecture rather than being bolted on.
+### 2. TalentOS // Studio (Freelance Client Pipeline)
+* **Ingestion**: `r/forhire` RSS, We Work Remotely contracts, and Contra/Peerlist open feeds.
+* **Fit Scoring**: Evaluates client pain points against freelancer service offerings, verified portfolio projects, and availability.
+* **Output Artifacts**: Tailored 3-paragraph problem-solving client pitches with suggested rates and one-click deep-link send assistance.
 
-## Status
+---
 
-The Job Search pipeline runs end to end. A measured run evaluates 10 jobs for
-about **$0.13** in roughly two minutes, with token usage and cost reported per
-run and per model.
+## Tech Stack & Google Cloud Ecosystem
 
-Still ahead: Cloud Run deployment, and the Freelance Client pipeline.
+* **Agent Framework**: Google ADK (`google.adk`) with isolated per-job `InMemorySessionService`.
+* **State Machine & Orchestration**: LangGraph (`langgraph`).
+* **Foundation Models**: Gemini 3.6 Flash & Gemini 3.5 Flash served via Vertex AI (`GOOGLE_CLOUD_LOCATION=global`).
+* **Observability & Tracing**: Langfuse v2 with zero-overhead offline fallback.
+* **Database & Memory**: Google Cloud Firestore (Native Mode, multi-tenant collections).
+* **Compute & Scheduling**: Google Cloud Run (private OIDC service) + Google Cloud Scheduler (12h cadence).
+* **Frontend**: Next.js 15 App Router, React 19, Tailwind CSS on Firebase App Hosting.
 
-## Stack
+---
 
-Google ADK · Gemini 3.6 Flash via Vertex AI · Cloud Run · Firestore ·
-Cloud Scheduler · FastAPI
+## Local Development & Testing
+
+```bash
+# 1. Run the hermetic offline test suite (235+ tests, ~6s)
+cd career-agent
+python -m pytest
+
+# 2. Start the FastAPI backend
+uvicorn main:app --reload --port 8080
+
+# 3. Start the Next.js frontend dashboard
+cd frontend
+npm run dev
+```

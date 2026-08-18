@@ -1,12 +1,13 @@
-# CLAUDE.md — Claude Code & Multi-Assistant Collaboration Guide
+# CLAUDE.md — TalentOS // Careers (Claude Code & Multi-Assistant Collaboration Guide)
 
-This repository is configured for interoperability across **Claude Code**, **OpenAI Codex**, and **Google Antigravity**.
+This repository is **TalentOS**, an AllStackLabs product. It is configured for
+interoperability across **Claude Code**, **OpenAI Codex**, and **Google Antigravity**.
 
 ---
 
 ## 1. Quick Commands
 
-### Python Backend & Agent Workflows (`career-agent/`)
+### Python Backend & Agent Workflows (`career-agent/` — TalentOS // Careers)
 ```bash
 cd career-agent
 
@@ -26,7 +27,7 @@ curl -X POST http://localhost:8080/run
 adk web .
 ```
 
-### Next.js 15 Frontend Dashboard (`career-agent/frontend/`)
+### Next.js 15 Frontend Dashboard (`career-agent/frontend/` — TalentOS // Careers UI)
 ```bash
 cd career-agent/frontend
 npm run dev
@@ -52,3 +53,4 @@ npm run lint
 2. **Hermetic Offline Testing**: Tests in `tests/` must never require live external API keys or live network requests.
 3. **No Direct Bot Submissions**: Keep the human-in-the-loop for final application sending.
 4. **Vertex AI Global Endpoint**: Always use `GOOGLE_CLOUD_LOCATION=global` for Gemini 3.x models.
+5. **Codebase Exploration (Graphify)**: Use Graphify to search and trace codebase architecture, and update the graph after iterations when dependencies or modules change.

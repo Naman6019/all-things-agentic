@@ -1,4 +1,4 @@
-"""Build the grouped read model used by Career Agent review surfaces."""
+"""Build the grouped read model used by TalentOS // Careers review surfaces."""
 from __future__ import annotations
 
 import re

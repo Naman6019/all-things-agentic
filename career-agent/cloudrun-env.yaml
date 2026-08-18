@@ -28,3 +28,18 @@ USER_ID: owner
 # Mounted from Secret Manager, deliberately outside /app so the secret volume
 # cannot shadow application code.
 PROFILE_PATH: /secrets/profile.json
+
+# LangGraph is the default orchestration path. The linear pipeline.py path
+# remains as a fallback if this is set to "false".
+USE_LANGGRAPH_PIPELINE: "true"
+
+# Re-evaluate skipped jobs when the evaluator model or candidate profile changes.
+# Cost: editing target_titles or switching EVALUATOR_MODEL puts previously
+# skipped jobs back in the queue, bounded per run by MAX_JOBS_PER_RUN.
+REEVALUATE_SKIPS_ON_CHANGE: "true"
+
+# --- TalentOS // Studio (Freelance Client Pipeline) ---
+ENABLE_RFORHIRE: "true"
+ENABLE_WWR_CONTRACT: "true"
+ENABLE_CONTRA: "true"
+MAX_LEADS_PER_RUN: "10"

@@ -1,4 +1,4 @@
-"""Langfuse telemetry and observability layer for Career Agent.
+"""Langfuse telemetry and observability layer for TalentOS // Careers.
 
 Provides production-grade tracing for agent runs, LLM generations, token usage,
 costs, latencies, and evaluations.
@@ -126,7 +126,7 @@ def create_pipeline_trace(
     try:
         return client.trace(
             id=f"run-{run_id}",
-            name="Career Agent Run",
+            name="TalentOS // Careers Run",
             user_id=user,
             metadata={
                 "run_id": run_id,

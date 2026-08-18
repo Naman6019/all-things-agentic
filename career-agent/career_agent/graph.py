@@ -1,4 +1,4 @@
-"""LangGraph orchestration workflow for the Career Agent Job Search Pipeline.
+"""LangGraph orchestration workflow for the TalentOS // Careers Job Search Pipeline.
 
 Formalizes the pipeline execution as a compiled StateGraph with explicit nodes,
 conditional routing, and Langfuse tracing.

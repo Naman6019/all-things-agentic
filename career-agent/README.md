@@ -1,15 +1,14 @@
-# Career Agent -- Job Search Pipeline (Taskmaster track)
+# TalentOS // Careers — Job Search Pipeline (Taskmaster track)
 
-Autonomous agent that fetches new job listings from company career
-portals and popular job sites, checks each one against your hard
+An **AllStackLabs** product. Autonomous agent that fetches new job listings from
+company career portals and popular job sites, checks each one against your hard
 requirements, tells you exactly which requirement a non-match failed, and
 drafts a tailored resume + cover letter for the ones that match -- then
 emails you a single digest. See `../hackathon-project-plan.md` for the full
 design rationale (including why this doesn't scrape LinkedIn/Indeed).
 
-This is the first of the two Career Agent workflows (Job Search now,
-Freelance Client Pipeline next). The Wireframe Assistant is a separate
-project/track and lives elsewhere.
+This is TalentOS // Careers, the first of two TalentOS workflows (Job Search
+now, Freelance Client Pipeline -- TalentOS // Studio -- next).
 
 ## How it works
 
@@ -211,7 +210,7 @@ you upload rather than something this code fetches. Not yet implemented.
 
 ```bash
 pip install -r requirements-dev.txt
-pytest        # 71 tests, ~2s
+python -m pytest   # 201 tests, ~6s
 ```
 
 Every test is offline -- no Firestore, no model calls, no network -- so the
@@ -221,7 +220,8 @@ regressions are pinned.
 
 ## Deploy to Cloud Run
 
-Currently deployed and running on a 12-hourly schedule.
+TalentOS // Careers is deployed as the `talentos` Cloud Run service, running
+on a 12-hourly schedule.
 
 ### One-time setup
 
@@ -229,13 +229,13 @@ Two service accounts, each with only what it needs:
 
 ```bash
 PROJECT=your-project
-gcloud iam service-accounts create career-agent-run
-gcloud iam service-accounts create career-agent-scheduler
+gcloud iam service-accounts create talentos-run
+gcloud iam service-accounts create talentos-scheduler
 
 # Runtime: Firestore + Vertex only
 for ROLE in roles/datastore.user roles/aiplatform.user; do
   gcloud projects add-iam-policy-binding "$PROJECT" \
-    --member="serviceAccount:career-agent-run@$PROJECT.iam.gserviceaccount.com" \
+    --member="serviceAccount:talentos-run@$PROJECT.iam.gserviceaccount.com" \
     --role="$ROLE" --condition=None
 done
 ```
@@ -245,41 +245,41 @@ than into the image, and access is granted on that one secret rather than
 project-wide:
 
 ```bash
-gcloud secrets create career-agent-profile --data-file=profile.json
-gcloud secrets add-iam-policy-binding career-agent-profile \
-  --member="serviceAccount:career-agent-run@$PROJECT.iam.gserviceaccount.com" \
+gcloud secrets create talentos-profile --data-file=profile.json
+gcloud secrets add-iam-policy-binding talentos-profile \
+  --member="serviceAccount:talentos-run@$PROJECT.iam.gserviceaccount.com" \
   --role=roles/secretmanager.secretAccessor
 ```
 
 ### Deploy
 
 ```bash
-gcloud run deploy career-agent \
+gcloud run deploy talentos \
   --source . --region us-central1 \
-  --service-account "career-agent-run@$PROJECT.iam.gserviceaccount.com" \
+  --service-account "talentos-run@$PROJECT.iam.gserviceaccount.com" \
   --no-allow-unauthenticated \
   --env-vars-file cloudrun-env.yaml \
-  --set-secrets "/secrets/profile.json=career-agent-profile:latest" \
+  --set-secrets "/secrets/profile.json=talentos-profile:latest" \
   --memory 1Gi --timeout 900 --concurrency 4 --max-instances 3
 ```
 
 Use `--env-vars-file`, not `--set-env-vars`: several values contain commas
-(`GREENHOUSE_BOARD_SLUGS=anthropic,scaleai,databricks`) and would be parsed as
-separate variables. Set `PROFILE_PATH=/secrets/profile.json` in that file, and
+(`GREENHOUSE_BOARD_SLUGS=anthropic,scaleai,databricks`) and would be parsed
+as separate variables. Set `PROFILE_PATH=/secrets/profile.json` in that file, and
 mount the secret **outside** `/app` so the volume cannot shadow application
 code.
 
 ### Schedule it
 
 ```bash
-gcloud run services add-iam-policy-binding career-agent --region us-central1 \
-  --member="serviceAccount:career-agent-scheduler@$PROJECT.iam.gserviceaccount.com" \
+gcloud run services add-iam-policy-binding talentos --region us-central1 \
+  --member="serviceAccount:talentos-scheduler@$PROJECT.iam.gserviceaccount.com" \
   --role=roles/run.invoker
 
-gcloud scheduler jobs create http career-agent-run --location us-central1 \
+gcloud scheduler jobs create http talentos-run --location us-central1 \
   --schedule="0 */12 * * *" --time-zone="Asia/Kolkata" \
   --uri="$SERVICE_URL/run" --http-method=POST \
-  --oidc-service-account-email="career-agent-scheduler@$PROJECT.iam.gserviceaccount.com" \
+  --oidc-service-account-email="talentos-scheduler@$PROJECT.iam.gserviceaccount.com" \
   --oidc-token-audience="$SERVICE_URL" --attempt-deadline=900s
 ```
 
@@ -290,8 +290,8 @@ can call this service and nothing else.
 
 - **The URL printed by `gcloud run deploy` was not the working one.** Take the
   URL from `gcloud run services describe ... --format='value(status.url)'`.
-- **`/healthz` never reaches the container.** Google's frontend returns its own
-  404 for that path while every other path serves normally. The health
+- **`/healthz` never reaches the container.** Google's frontend returns its
+  own 404 for that path while every other path serves normally. The health
   endpoint is `/health`.
 
 ### Access
@@ -299,7 +299,7 @@ can call this service and nothing else.
 The service is private. To view the UI:
 
 ```bash
-gcloud run services proxy career-agent --region us-central1
+gcloud run services proxy talentos --region us-central1
 ```
 
 `--no-allow-unauthenticated` is what keeps a stranger from triggering billable
@@ -426,9 +426,10 @@ falls back to the flash rate and is flagged in the run summary and the UI.
   Capturing all ~2,500 fetched per run would be ~2,500 writes against a
   20k/day free tier, for postings the pre-filter already discarded; that
   belongs with a shared fetch scheduler.
-- **The profile lives in a local `profile.json`, not Firestore.** Simpler to
-  hand-edit for now; move it into a Firestore doc later if you want to edit
-  it from a UI instead of a file (see the docstring in `config.py`).
+- **The profile is stored in Firestore once saved from the UI.** The local
+  `profile.json` file is the bootstrap path — a fresh install, local development,
+  and the read-only Secret Manager mount on Cloud Run. Firestore wins once a
+  profile has been saved; see `config.py`'s `load_candidate_profile`.
 - **Jobs are capped per run (`MAX_JOBS_PER_RUN`, default 5).** The cap is
   mandatory -- one Greenhouse board can
   return 500+ postings and the Arbeitnow feed ~175 (~1.8M characters) per page.
@@ -471,4 +472,4 @@ falls back to the flash rate and is flagged in the run summary and the UI.
   `gemini-3.6-pro` is not currently available.
 - Google agent framework: ADK (`google-adk`), `LlmAgent` in
   `career_agent/agent.py`.
-- GCP infra: Cloud Run (this service) + Firestore (all pipeline state).
+- GCP infra: Cloud Run (`talentos` service) + Firestore (all pipeline state).

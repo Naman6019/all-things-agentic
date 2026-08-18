@@ -1,4 +1,4 @@
-"""Typed data models shared across the Career Agent's job search pipeline."""
+"""Typed data models shared across the TalentOS // Careers job search pipeline."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -62,6 +62,19 @@ class CandidateProfile:
     # Each item is {"location": str, "work_mode": "onsite"|"remote"|"both"}.
     location_preferences: list[dict[str, str]] = field(default_factory=list)
 
+    # --- Freelance overlay (TalentOS // Studio) ---
+    # These fields are only read by the freelance agent. The shared core above
+    # (name, contact, skills, portfolio, GitHub, writing voice) feeds both
+    # agents. The overlay is what makes the freelancer's profile different from
+    # the job-seeker's: the job agent leads with depth and tenure; the freelance
+    # agent leads with specific pain points and immediate delivery.
+    freelance_niche: str = ""
+    freelance_availability: str = ""
+    freelance_services: list[str] = field(default_factory=list)
+    freelance_portfolio_summary: str = ""
+    freelance_rate_min: Optional[int] = None
+    freelance_rate_currency: str = "USD"
+
 
 @dataclass
 class JobEvaluation:
@@ -99,4 +112,64 @@ class TailoredMaterials:
     # and "this is where applications go" are different claims, and only one of
     # them is safe to act on without checking.
     contact_confidence: Optional[str] = None
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+# --- TalentOS // Studio (Freelance Client Pipeline) ---------------------------
+
+
+@dataclass
+class ClientLead:
+    """A freelance gig posting, normalized across sources.
+
+    Mirrors JobListing but with freelance-specific fields: budget, timeline,
+    and client instead of salary, location, and company. The freelance agent
+    reads these the same way the job agent reads a JobListing.
+    """
+
+    lead_id: str  # stable id: f"{source}:{external_id}"
+    source: str  # "rforhire", "wwr", "contra", "peerlist"
+    title: str
+    client: str  # Client name or "Anonymous"
+    budget: str  # "$500-1000", "Hourly: $50/hr", or ""
+    timeline: str  # "2 weeks", "ASAP", or ""
+    url: str
+    description: str
+    posted_at: Optional[str] = None
+    fetched_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+@dataclass
+class LeadEvaluation:
+    """The agent's fit verdict for one freelance lead.
+
+    Same 3-state logic as JobEvaluation (MET / UNMET / NOT STATED), applied to
+    freelance criteria: budget vs rate floor, services vs requirements, timeline
+    vs availability.
+    """
+
+    lead_id: str
+    match: bool
+    unmet_requirements: list[str]
+    reasoning: str
+    match_strength: str = "unscored"
+    missing_information: list[str] = field(default_factory=list)
+    evaluated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+@dataclass
+class PitchedMaterials:
+    """Drafted pitch materials for a freelance lead the agent matched.
+
+    The pitch is the outreach message (150-300 words). The contact_method tells
+    the user WHERE to send it (Reddit DM, WWR reply, Contra message). The agent
+    never sends -- it drafts and deep-links; the human clicks send on the
+    platform itself.
+    """
+
+    lead_id: str
+    pitch_message: str
+    relevant_portfolio: list[str] = field(default_factory=list)
+    suggested_rate: Optional[str] = None
+    contact_method: Optional[str] = None
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())

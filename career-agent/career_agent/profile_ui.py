@@ -119,7 +119,7 @@ def render(profile: CandidateProfile, saved: bool = False, error: str = "") -> s
     return (
         "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-        "<title>Career Agent &mdash; profile</title>"
+        "<title>TalentOS // Careers &mdash; profile</title>"
         f"<style>{_BASE_STYLE}{_STYLE}</style></head><body><div class='wrap'>"
         "<h1>Your profile</h1>"
         '<div class="sub">What the agent reads when judging postings and writing resumes. '

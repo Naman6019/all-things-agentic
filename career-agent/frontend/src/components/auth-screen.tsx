@@ -84,12 +84,12 @@ export function AuthScreen() {
           <div className="grid size-10 place-items-center rounded-xl bg-white text-[#0f6b55]">
             <Search className="size-5" strokeWidth={2.2} />
           </div>
-          <span className="text-lg font-semibold">Career Agent</span>
+          <span className="text-lg font-semibold">TalentOS</span>
         </div>
 
         <div className="max-w-xl py-16">
           <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/20 px-3 py-1 text-sm text-[#d4e8e2]">
-            <Sparkles className="size-4" /> Human-approved job search
+            <Sparkles className="size-4" /> An AllStackLabs product
           </p>
           <h1 className="max-w-lg text-balance text-5xl font-semibold leading-[1.08]">
             Every promising role, with the evidence to act on it.
@@ -119,7 +119,7 @@ export function AuthScreen() {
             <div className="grid size-10 place-items-center rounded-xl bg-[#153b32] text-white">
               <Search className="size-5" />
             </div>
-            <span className="text-lg font-semibold">Career Agent</span>
+            <span className="text-lg font-semibold">TalentOS</span>
           </div>
 
           {mode === "reset" && (
@@ -221,7 +221,7 @@ export function AuthScreen() {
 
           {mode !== "reset" && (
             <p className="mt-7 text-center text-sm text-[#64726d]">
-              {mode === "sign-in" ? "New to Career Agent?" : "Already have an account?"}{" "}
+              {mode === "sign-in" ? "New to TalentOS?" : "Already have an account?"}{" "}
               <button
                 type="button"
                 onClick={() => setMode(mode === "sign-in" ? "sign-up" : "sign-in")}
