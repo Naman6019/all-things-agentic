@@ -9,4 +9,3 @@ graphify-out/
 # Local session transcripts and dumps
 new-session*.json
 *.jsonl
-

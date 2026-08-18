@@ -7,23 +7,10 @@ runConfig:
 
 env:
   - variable: TALENTOS_API_URL
-    value: https://talentos-iqf6u4g5bq-uc.a.run.app
+    value: https://career-agent-275295803705.us-central1.run.app
     availability:
       - RUNTIME
-  # Backwards compatibility fallback if backend is running on previous service name
   - variable: CAREER_AGENT_API_URL
-    value: https://career-agent-iqf6u4g5bq-uc.a.run.app
-    availability:
-      - RUNTIME
-  # Comma-separated beta user emails. Keep this out of Git — inject via the
-  # Firebase App Hosting UI or a secret, not committed here.
-  - variable: AUTHORIZED_EMAILS
-    value: ""
-    availability:
-      - RUNTIME
-  # Only required if the backend enables the optional RUN_AUTH_TOKEN second
-  # gate for spending endpoints. Leave blank if the backend does not set it.
-  - variable: TALENTOS_RUN_TOKEN
-    value: ""
+    value: https://career-agent-275295803705.us-central1.run.app
     availability:
       - RUNTIME
