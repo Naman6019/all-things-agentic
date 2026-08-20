@@ -148,3 +148,27 @@ def test_both_profile_editors_normalize_scope_identically(monkeypatch):
         {"location": "Kolkata, India", "work_mode": "both"},
         {"location": "Worldwide", "work_mode": "remote"},
     ]
+
+
+def test_user_scope_dependency_restores_owner_after_request():
+    scope = main.require_user_scope("public-user_123")
+    next(scope)
+    assert main.config.current_user_id() == "public-user_123"
+
+    with pytest.raises(StopIteration):
+        next(scope)
+
+    assert main.config.current_user_id() == main.config.USER_ID
+
+
+def test_new_public_profile_does_not_fall_back_to_owner_resume(monkeypatch):
+    token = main.config.set_current_user_id("public-user_456")
+    try:
+        main.config.invalidate_profile_cache()
+        monkeypatch.setattr(main.firestore_store, "get_profile", lambda: None)
+        profile = main.config.load_candidate_profile()
+        assert profile.resume_master_text == ""
+        assert profile.target_titles == []
+    finally:
+        main.config.reset_current_user_id(token)
+        main.config.invalidate_profile_cache()

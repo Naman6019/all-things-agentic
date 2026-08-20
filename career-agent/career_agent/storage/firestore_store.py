@@ -45,6 +45,10 @@ _client: firestore.Client | None = None
 _READ_CHUNK = 300
 
 
+def _current_user_id() -> str:
+    return config.current_user_id()
+
+
 def get_client() -> firestore.Client:
     global _client
     if _client is None:
@@ -54,12 +58,12 @@ def get_client() -> firestore.Client:
 
 def _scoped(job_id: str, user_id: str | None = None) -> str:
     """Document id for a per-user record of one job."""
-    return f"{user_id or config.USER_ID}__{job_id}"
+    return f"{user_id or _current_user_id()}__{job_id}"
 
 
 def _owner_fields(job_id: str, user_id: str | None = None) -> dict:
     """The identity fields every per-user document carries."""
-    return {"user_id": user_id or config.USER_ID, "job_id": job_id}
+    return {"user_id": user_id or _current_user_id(), "job_id": job_id}
 
 
 def _with_job_id(snapshot) -> dict:
@@ -164,7 +168,7 @@ def drain_quick_adds() -> list[JobListing]:
     db = get_client()
     docs = (
         db.collection("quick_add_queue")
-        .where(filter=FieldFilter("user_id", "==", config.USER_ID))
+        .where(filter=FieldFilter("user_id", "==", _current_user_id()))
         .stream()
     )
     jobs = []
@@ -264,7 +268,7 @@ def save_materials(materials: TailoredMaterials) -> None:
 
 def get_profile() -> dict | None:
     """The current user's stored profile, or None if they have never saved one."""
-    snapshot = get_client().collection("profiles").document(config.USER_ID).get()
+    snapshot = get_client().collection("profiles").document(_current_user_id()).get()
     if not snapshot.exists:
         return None
     doc = snapshot.to_dict() or {}
@@ -280,8 +284,9 @@ def save_profile(data: dict) -> None:
     Secret Manager mount in production -- the service cannot write to it, so a
     profile editor has nowhere to save without this.
     """
-    get_client().collection("profiles").document(config.USER_ID).set(
-        {**data, "user_id": config.USER_ID, "updated_at": datetime.now(timezone.utc).isoformat()}
+    user_id = _current_user_id()
+    get_client().collection("profiles").document(user_id).set(
+        {**data, "user_id": user_id, "updated_at": datetime.now(timezone.utc).isoformat()}
     )
 
 
@@ -431,7 +436,7 @@ def save_run_summary(run_id: str, summary: dict) -> None:
         dict(
             summary,
             run_id=run_id,
-            user_id=config.USER_ID,
+            user_id=_current_user_id(),
             recorded_at=datetime.now(timezone.utc).isoformat(),
         ),
         merge=True,
@@ -455,7 +460,7 @@ def get_applications_by_status(statuses: list[str]) -> list[dict]:
     db = get_client()
     docs = (
         db.collection("applications")
-        .where(filter=FieldFilter("user_id", "==", config.USER_ID))
+        .where(filter=FieldFilter("user_id", "==", _current_user_id()))
         .stream()
     )
     wanted = set(statuses)
@@ -469,7 +474,7 @@ def get_latest_run_summary() -> dict:
     runs = [
         d.to_dict() or {}
         for d in db.collection("runs")
-        .where(filter=FieldFilter("user_id", "==", config.USER_ID))
+        .where(filter=FieldFilter("user_id", "==", _current_user_id()))
         .stream()
     ]
     runs.sort(key=lambda r: r.get("recorded_at", ""), reverse=True)
@@ -597,7 +602,7 @@ def get_leads_by_status(statuses: list[str]) -> list[dict]:
     db = get_client()
     docs = (
         db.collection("pitches")
-        .where(filter=FieldFilter("user_id", "==", config.USER_ID))
+        .where(filter=FieldFilter("user_id", "==", _current_user_id()))
         .stream()
     )
     wanted = set(statuses)
@@ -639,7 +644,7 @@ def save_freelance_run_summary(run_id: str, summary: dict) -> None:
         dict(
             summary,
             run_id=run_id,
-            user_id=config.USER_ID,
+            user_id=_current_user_id(),
             recorded_at=datetime.now(timezone.utc).isoformat(),
         ),
         merge=True,

@@ -129,10 +129,12 @@ overwritten. Users can restore the generated version, copy the current cover
 letter, or print the current resume to PDF. Resume export prefers the edited
 version when one exists.
 
-The first hosted release is intentionally a private beta. Every Next.js route
-handler verifies the Firebase ID token and checks `AUTHORIZED_EMAILS` before it
-can call the private Cloud Run service. The browser never receives Cloud Run
-credentials, and Cloud Run remains protected by IAM.
+The hosted release is a public preview. The landing page and Firebase
+registration are open, while every workspace route still verifies a Firebase
+ID token before it can call the private Cloud Run service. The proxy forwards a
+validated user scope to Firestore, so public accounts do not share the owner's
+applications or profile. The browser never receives Cloud Run credentials, and
+Cloud Run remains protected by IAM.
 
 ```bash
 cd frontend
@@ -144,9 +146,16 @@ npm run dev
 Required App Hosting runtime configuration:
 
 - `CAREER_AGENT_API_URL`: the private Cloud Run service URL.
-- `AUTHORIZED_EMAILS`: comma-separated beta users; keep this out of Git.
+- `AUTHORIZED_EMAILS`: optional comma-separated emergency allowlist. Leave it
+  blank for public preview access; keep it out of Git.
+- `TALENTOS_OWNER_EMAILS`: comma-separated owner emails that should continue to
+  use the existing `owner` Firestore namespace; keep it out of Git.
 - `CAREER_AGENT_RUN_TOKEN`: only required if the backend enables the optional
   second gate for spending endpoints.
+
+New public accounts start with an empty profile rather than inheriting the
+owner's resume. They can create their own Firestore-scoped preferences before
+connecting a candidate profile.
 
 App Hosting injects the registered Firebase Web App configuration in hosted
 builds. Local development reads the public web configuration from

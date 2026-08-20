@@ -123,3 +123,26 @@ export type FreelanceProfile = {
   freelance_services: string[];
   freelance_portfolio_summary: string;
 };
+
+// --- Pipeline run telemetry ---------------------------------------------------
+
+export type RunSummary = {
+  run_id?: string;
+  recorded_at?: string;
+  /** Raw postings pulled from every ATS and aggregator source. */
+  fetched?: number;
+  quick_added?: number;
+  /** Postings this evaluator has not judged before. */
+  unseen?: number;
+  /** Survivors of the deterministic pre-filter. */
+  relevant_after_prefilter?: number;
+  taken_this_run?: number;
+  deferred_to_next_run?: number;
+  /** Drop counts keyed by rule, e.g. { title_not_in_target_titles: 48 }. */
+  filtered_out?: Record<string, number>;
+  selected_by_source?: Record<string, number>;
+  source_errors?: Record<string, string>;
+  cost_usd?: number;
+  tokens?: number;
+  models?: { evaluator?: string; drafter?: string };
+};

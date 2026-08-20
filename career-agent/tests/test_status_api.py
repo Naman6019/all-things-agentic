@@ -102,3 +102,54 @@ def test_jobs_endpoint_returns_grouped_postings(monkeypatch):
     assert response["status"] == "matched"
     assert len(response["jobs"]) == 1
     assert [posting["url"] for posting in response["jobs"][0]["postings"]] == ["https://one", "https://two"]
+
+
+def test_json_status_endpoint_accepts_skip_and_unskip(monkeypatch):
+    """The web UI moves cards between all three of its tabs.
+
+    Only 'applied' and 'drafted' used to be accepted, so every Skip and every
+    Move to Inbox click came back a 400.
+    """
+    recorded = _record_status_writes(monkeypatch, [
+        {"job_id": "one", "company": "Acme", "title": "ML Engineer", "status": "matched"},
+    ])
+
+    main.api_application_status(main.ApplicationStatusRequest(job_id="one", status="skipped"))
+
+    assert recorded == [("one", "skipped")]
+
+
+def test_unskipping_a_hidden_posting_still_writes(monkeypatch):
+    """Skipped applications are excluded from the group lookup by design.
+
+    Resolving the group therefore finds nothing when a skipped posting is sent
+    back to the inbox; the single job_id must still be written.
+    """
+    recorded = _record_status_writes(monkeypatch, [])
+
+    response = main.api_application_status(
+        main.ApplicationStatusRequest(job_id="hidden", status="matched")
+    )
+
+    assert response["job_ids"] == ["hidden"]
+    assert recorded == [("hidden", "matched")]
+
+
+def test_run_summary_endpoint_returns_the_latest_run(monkeypatch):
+    summary = {
+        "run_id": "run_1",
+        "fetched": 142,
+        "unseen": 96,
+        "relevant_after_prefilter": 8,
+        "filtered_out": {"title_not_in_target_titles": 48},
+        "cost_usd": 0.0041,
+    }
+    monkeypatch.setattr(main.firestore_store, "get_latest_run_summary", lambda: summary)
+
+    assert main.api_run_summary() == summary
+
+
+def test_run_summary_endpoint_survives_a_project_with_no_runs(monkeypatch):
+    monkeypatch.setattr(main.firestore_store, "get_latest_run_summary", dict)
+
+    assert main.api_run_summary() == {}

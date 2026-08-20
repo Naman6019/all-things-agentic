@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuthorizedUser } from "@/lib/auth-server";
-import { callTalentOS } from "@/lib/cloud-run";
+import { callTalentOSForUser } from "@/lib/cloud-run";
 import { routeError } from "@/lib/route-errors";
 
 export async function POST(request: NextRequest) {
   try {
-    await requireAuthorizedUser(request);
+    const user = await requireAuthorizedUser(request);
     const body = (await request.json()) as Record<string, unknown>;
     const runToken = process.env.TALENTOS_RUN_TOKEN || process.env.CAREER_AGENT_RUN_TOKEN;
-    const response = await callTalentOS("/api/quick-add", {
+    const response = await callTalentOSForUser("/api/quick-add", user, {
       method: "POST",
       headers: {
         "content-type": "application/json",

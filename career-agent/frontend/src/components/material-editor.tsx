@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  ArrowLeft,
   Check,
   Clipboard,
   FileText,
@@ -9,20 +8,25 @@ import {
   Printer,
   RotateCcw,
   Save,
-  Sparkles,
   Trash2,
-  ExternalLink,
-  ChevronRight,
-  Eye,
   Edit3
 } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { cn } from "@/lib/utils";
 import type { MaterialsResponse, ResumeEntry, TailoredResume } from "@/lib/types";
+import { WorkbenchHeader } from "@/components/workbench-header";
+import { useToast } from "@/components/ui/toast";
 
 type MaterialType = "cover-letter" | "resume";
+
+type MaterialEditPayload = {
+  job_id: string;
+  cover_letter?: string;
+  tailored_resume?: TailoredResume;
+  reset_cover_letter?: boolean;
+  reset_tailored_resume?: boolean;
+};
 
 async function responseError(response: Response) {
   try {
@@ -31,6 +35,15 @@ async function responseError(response: Response) {
   } catch {
     return `Request failed with ${response.status}.`;
   }
+}
+
+async function loadMaterials(
+  request: (path: string, init?: RequestInit) => Promise<Response>,
+  jobId: string,
+): Promise<MaterialsResponse> {
+  const res = await request(`/api/materials?job_id=${encodeURIComponent(jobId)}`);
+  if (!res.ok) throw new Error(await responseError(res));
+  return (await res.json()) as MaterialsResponse;
 }
 
 function emptyEntry(): ResumeEntry {
@@ -72,13 +85,13 @@ function ResumeEntryEditor({
   onRemove: () => void;
 }) {
   return (
-    <fieldset className="glass-card rounded-2xl border border-white/10 p-5 shadow-lg">
-      <div className="flex items-center justify-between gap-3 border-b border-white/5 pb-3">
+    <fieldset className="glass-card rounded-surface border border-line-strong p-5 shadow-lg">
+      <div className="flex items-center justify-between gap-3 border-b border-line pb-3">
         <legend className="font-display text-sm font-bold text-white">{label}</legend>
         <button
           type="button"
           onClick={onRemove}
-          className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold text-rose-400 hover:bg-rose-500/10 transition"
+          className="inline-flex items-center gap-1.5 rounded-control px-2.5 py-1 text-xs font-semibold text-rose-400 hover:bg-rose-500/10 transition"
         >
           <Trash2 className="size-3.5" /> Remove
         </button>
@@ -90,7 +103,7 @@ function ResumeEntryEditor({
           <input
             value={entry.title}
             onChange={(event) => onChange({ ...entry, title: event.target.value })}
-            className="h-10 w-full rounded-xl border border-white/10 bg-[#0d1317] px-3 text-xs text-white placeholder:text-slate-600 focus:border-emerald-500/50 focus:outline-none"
+            className="h-10 w-full rounded-control border border-line-strong bg-surface-1 px-3 text-xs text-white placeholder:text-slate-500 focus:border-emerald-500/50 focus:outline-none"
           />
         </div>
         <div>
@@ -98,7 +111,7 @@ function ResumeEntryEditor({
           <input
             value={entry.organization}
             onChange={(event) => onChange({ ...entry, organization: event.target.value })}
-            className="h-10 w-full rounded-xl border border-white/10 bg-[#0d1317] px-3 text-xs text-white placeholder:text-slate-600 focus:border-emerald-500/50 focus:outline-none"
+            className="h-10 w-full rounded-control border border-line-strong bg-surface-1 px-3 text-xs text-white placeholder:text-slate-500 focus:border-emerald-500/50 focus:outline-none"
           />
         </div>
         <div className="sm:col-span-2">
@@ -107,7 +120,7 @@ function ResumeEntryEditor({
             value={entry.dates}
             onChange={(event) => onChange({ ...entry, dates: event.target.value })}
             placeholder="e.g. 2023 — Present"
-            className="h-10 w-full rounded-xl border border-white/10 bg-[#0d1317] px-3 text-xs text-white placeholder:text-slate-600 focus:border-emerald-500/50 focus:outline-none"
+            className="h-10 w-full rounded-control border border-line-strong bg-surface-1 px-3 text-xs text-white placeholder:text-slate-500 focus:border-emerald-500/50 focus:outline-none"
           />
         </div>
         <div className="sm:col-span-2">
@@ -116,7 +129,7 @@ function ResumeEntryEditor({
             value={entry.bullets.join("\n")}
             onChange={(event) => onChange({ ...entry, bullets: splitLines(event.target.value) })}
             rows={4}
-            className="w-full resize-y rounded-xl border border-white/10 bg-[#0d1317] p-3 text-xs text-slate-200 leading-relaxed placeholder:text-slate-600 focus:border-emerald-500/50 focus:outline-none"
+            className="w-full resize-y rounded-control border border-line-strong bg-surface-1 p-3 text-xs text-slate-200 leading-relaxed placeholder:text-slate-500 focus:border-emerald-500/50 focus:outline-none"
           />
         </div>
       </div>
@@ -125,8 +138,8 @@ function ResumeEntryEditor({
 }
 
 export function MaterialEditor({ jobId, materialType = "cover-letter" }: { jobId: string; materialType?: MaterialType }) {
-  const router = useRouter();
   const { user } = useAuth();
+  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<MaterialType>(materialType);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -147,33 +160,37 @@ export function MaterialEditor({ jobId, materialType = "cover-letter" }: { jobId
     return fetch(path, { ...init, headers });
   }, [user]);
 
-  const fetchMaterials = useCallback(async () => {
-    if (!user) return;
-    setLoading(true);
-    setError("");
-    try {
-      const res = await request(`/api/materials?job_id=${encodeURIComponent(jobId)}`);
-      if (!res.ok) throw new Error(await responseError(res));
-      const data = (await res.json()) as MaterialsResponse;
-      setMaterials(data);
-      setCoverLetterText(data.effective_cover_letter || data.generated_cover_letter || "");
-      setResumeData(data.effective_tailored_resume || data.generated_tailored_resume || null);
-    } catch (err: any) {
-      setError(err.message || "Failed to load application materials.");
-    } finally {
-      setLoading(false);
-    }
+  /** Kicks off the load; returns a cleanup that ignores in-flight results. */
+  const refresh = useCallback(() => {
+    if (!user) return () => {};
+    let active = true;
+    loadMaterials(request, jobId)
+      .then((data) => {
+        if (!active) return;
+        setMaterials(data);
+        setCoverLetterText(data.effective_cover_letter || data.generated_cover_letter || "");
+        setResumeData(data.effective_tailored_resume || data.generated_tailored_resume || null);
+        setError("");
+      })
+      .catch((err: unknown) => {
+        if (!active) return;
+        setError(err instanceof Error ? err.message : "Failed to load application materials.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, [jobId, request, user]);
 
-  useEffect(() => {
-    void fetchMaterials();
-  }, [fetchMaterials]);
+  useEffect(() => refresh(), [refresh]);
 
   async function handleSave() {
     setSaving(true);
     setSavedNotice(false);
     try {
-      const body: any = { job_id: jobId };
+      const body: MaterialEditPayload = { job_id: jobId };
       if (activeTab === "cover-letter") {
         body.cover_letter = coverLetterText;
       } else if (activeTab === "resume" && resumeData) {
@@ -188,19 +205,36 @@ export function MaterialEditor({ jobId, materialType = "cover-letter" }: { jobId
       if (!res.ok) throw new Error(await responseError(res));
       setSavedNotice(true);
       setTimeout(() => setSavedNotice(false), 3000);
-      void fetchMaterials();
-    } catch (err: any) {
-      alert(`Save failed: ${err.message}`);
+      toast({ title: "Saved", description: "Your edits are stored in Firestore.", tone: "success" });
+      refresh();
+    } catch (err) {
+      toast({
+        title: "Save failed",
+        description: err instanceof Error ? err.message : "Unknown error.",
+        tone: "error",
+      });
     } finally {
       setSaving(false);
     }
   }
 
-  async function handleResetDraft() {
-    if (!confirm("Reset these materials back to the original Gemini AI draft?")) return;
+  // A native confirm() blocks the tab and looks nothing like the product.
+  // The reset is fully reversible from the AI draft, so an explicit second
+  // click in a toast is enough friction.
+  function handleResetDraft() {
+    toast({
+      title: "Reset to the original Gemini draft?",
+      description: "Your edits to this document will be discarded.",
+      tone: "info",
+      duration: 8000,
+      action: { label: "Reset", onClick: () => void resetDraft() },
+    });
+  }
+
+  async function resetDraft() {
     setSaving(true);
     try {
-      const body: any = { job_id: jobId };
+      const body: MaterialEditPayload = { job_id: jobId };
       if (activeTab === "cover-letter") {
         body.reset_cover_letter = true;
       } else {
@@ -212,9 +246,13 @@ export function MaterialEditor({ jobId, materialType = "cover-letter" }: { jobId
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(await responseError(res));
-      void fetchMaterials();
-    } catch (err: any) {
-      alert(`Reset failed: ${err.message}`);
+      refresh();
+    } catch (err) {
+      toast({
+        title: "Reset failed",
+        description: err instanceof Error ? err.message : "Unknown error.",
+        tone: "error",
+      });
     } finally {
       setSaving(false);
     }
@@ -236,62 +274,57 @@ export function MaterialEditor({ jobId, materialType = "cover-letter" }: { jobId
   }
 
   return (
-    <div className="relative min-h-dvh overflow-x-hidden bg-[#080c0e] text-slate-100 pb-20">
-      <div className="ambient-glow-careers" />
+    <div className="relative min-h-dvh overflow-x-hidden bg-surface-0 text-slate-100 pb-20">
+      {/* Subtle Grid Background */}
+      <div className="absolute inset-0 bg-grid-subtle pointer-events-none opacity-40" />
 
-      {/* Header */}
-      <header className="sticky top-0 z-40 border-b border-white/5 bg-[#080c0e]/85 backdrop-blur-xl">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => router.push("/jobs")}
-              className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:bg-white/10 hover:text-white"
-            >
-              <ArrowLeft className="size-3.5" />
-              <span>Back to Jobs</span>
-            </button>
-            <div className="h-4 w-px bg-white/10" />
-            <span className="font-display text-sm font-bold text-white truncate max-w-xs sm:max-w-md">
-              {materials?.title || "Application Studio"}
-            </span>
-          </div>
-
-          {/* Action Bar */}
-          <div className="flex items-center gap-2">
+      <WorkbenchHeader
+        backHref="/jobs"
+        backLabel="Back to Jobs"
+        width="max-w-6xl"
+        title={materials?.title || "Application Studio"}
+        actions={
+          <>
             <button
               onClick={handlePrint}
-              className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:bg-white/10 hover:text-white"
-              title="Open Printable Resume"
+              aria-label="Open the print-ready A4 resume"
+              title="Open printable resume"
+              className="flex items-center gap-1.5 rounded-control border border-line-strong bg-white/5 px-3 py-2 text-xs font-medium text-slate-300 transition hover:bg-white/10 hover:text-white"
             >
-              <Printer className="size-3.5" />
+              <Printer className="size-3.5" aria-hidden />
               <span className="hidden sm:inline">Print Ready A4</span>
             </button>
 
             <button
               onClick={handleCopy}
-              className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:bg-white/10 hover:text-white"
+              aria-label="Copy this document to the clipboard"
+              className="flex items-center gap-1.5 rounded-control border border-line-strong bg-white/5 px-3 py-2 text-xs font-medium text-slate-300 transition hover:bg-white/10 hover:text-white"
             >
-              {copied ? <Check className="size-3.5 text-emerald-400" /> : <Clipboard className="size-3.5" />}
-              <span>{copied ? "Copied" : "Copy"}</span>
+              {copied ? (
+                <Check className="size-3.5 text-careers" aria-hidden />
+              ) : (
+                <Clipboard className="size-3.5" aria-hidden />
+              )}
+              <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
             </button>
 
             <button
               onClick={handleSave}
               disabled={saving}
-              className="flex items-center gap-1.5 rounded-xl bg-emerald-500 px-4 py-1.5 text-xs font-semibold text-[#080c0e] shadow-[0_0_15px_rgba(16,185,129,0.3)] transition hover:bg-emerald-400 active:scale-[0.98] disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-control bg-careers px-4 py-2 text-xs font-semibold text-surface-0 shadow-[0_0_15px_rgba(16,185,129,0.3)] transition hover:bg-careers-bright active:scale-[0.98] disabled:opacity-50"
             >
-              <Save className="size-3.5" />
+              <Save className="size-3.5" aria-hidden />
               <span>{saving ? "Saving…" : "Save Changes"}</span>
             </button>
-          </div>
-        </div>
-      </header>
+          </>
+        }
+      />
 
       {/* Main Studio View */}
       <main className="relative z-10 mx-auto max-w-6xl px-4 py-8 sm:px-6">
         {/* Context Card */}
         {materials && (
-          <div className="glass-panel mb-8 rounded-3xl p-6 border border-white/10">
+          <div className="glass-panel mb-8 rounded-surface p-6 border border-line-strong">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <span className="text-xs font-mono text-emerald-400 uppercase tracking-wider">Target Position</span>
@@ -305,15 +338,15 @@ export function MaterialEditor({ jobId, materialType = "cover-letter" }: { jobId
         )}
 
         {/* Tab Switcher */}
-        <div className="flex items-center justify-between border-b border-white/5 pb-4">
+        <div className="flex items-center justify-between border-b border-line pb-4">
           <div className="flex items-center gap-2">
             <button
               onClick={() => setActiveTab("cover-letter")}
               className={cn(
-                "flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold transition",
+                "flex items-center gap-2 rounded-control px-4 py-2 text-xs font-semibold transition",
                 activeTab === "cover-letter"
-                  ? "bg-emerald-500 text-[#080c0e] shadow-[0_0_15px_rgba(16,185,129,0.3)]"
-                  : "border border-white/5 bg-white/5 text-slate-400 hover:text-white"
+                  ? "bg-emerald-500 text-surface-0 shadow-[0_0_15px_rgba(16,185,129,0.3)]"
+                  : "border border-line bg-white/5 text-slate-400 hover:text-white"
               )}
             >
               <FileText className="size-3.5" />
@@ -323,10 +356,10 @@ export function MaterialEditor({ jobId, materialType = "cover-letter" }: { jobId
             <button
               onClick={() => setActiveTab("resume")}
               className={cn(
-                "flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold transition",
+                "flex items-center gap-2 rounded-control px-4 py-2 text-xs font-semibold transition",
                 activeTab === "resume"
-                  ? "bg-emerald-500 text-[#080c0e] shadow-[0_0_15px_rgba(16,185,129,0.3)]"
-                  : "border border-white/5 bg-white/5 text-slate-400 hover:text-white"
+                  ? "bg-emerald-500 text-surface-0 shadow-[0_0_15px_rgba(16,185,129,0.3)]"
+                  : "border border-line bg-white/5 text-slate-400 hover:text-white"
               )}
             >
               <Edit3 className="size-3.5" />
@@ -344,7 +377,7 @@ export function MaterialEditor({ jobId, materialType = "cover-letter" }: { jobId
         </div>
 
         {savedNotice && (
-          <div className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-950/40 p-3 text-xs text-emerald-300 text-center">
+          <div className="mt-4 rounded-control border border-emerald-500/30 bg-emerald-950/40 p-3 text-xs text-emerald-300 text-center">
             ✓ Changes saved to Firestore. Print-ready resume and materials are up to date.
           </div>
         )}
@@ -355,12 +388,12 @@ export function MaterialEditor({ jobId, materialType = "cover-letter" }: { jobId
             <span className="size-5 animate-spin rounded-full border-2 border-emerald-500/30 border-t-emerald-400" />
           </div>
         ) : error ? (
-          <div className="mt-8 rounded-2xl border border-rose-500/30 bg-rose-950/30 p-6 text-center text-xs text-rose-300">
+          <div className="mt-8 rounded-surface border border-rose-500/30 bg-rose-950/30 p-6 text-center text-xs text-rose-300">
             {error}
           </div>
         ) : activeTab === "cover-letter" ? (
           <div className="mt-6 space-y-4">
-            <div className="glass-panel rounded-3xl p-6 border border-white/10">
+            <div className="glass-panel rounded-surface p-6 border border-line-strong">
               <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-400">
                 150-250 Word Targeted Cover Letter (Crafted by Gemini 3.6 Flash)
               </label>
@@ -368,20 +401,20 @@ export function MaterialEditor({ jobId, materialType = "cover-letter" }: { jobId
                 value={coverLetterText}
                 onChange={(e) => setCoverLetterText(e.target.value)}
                 rows={14}
-                className="w-full resize-y rounded-2xl border border-white/10 bg-[#0d1317] p-4 text-sm leading-relaxed text-slate-200 placeholder:text-slate-600 focus:border-emerald-500/50 focus:outline-none"
+                className="w-full resize-y rounded-surface border border-line-strong bg-surface-1 p-4 text-sm leading-relaxed text-slate-200 placeholder:text-slate-500 focus:border-emerald-500/50 focus:outline-none"
               />
             </div>
           </div>
         ) : resumeData ? (
           <div className="mt-6 space-y-6">
             {/* Header & Headline */}
-            <div className="glass-panel rounded-3xl p-6 border border-white/10 space-y-4">
+            <div className="glass-panel rounded-surface p-6 border border-line-strong space-y-4">
               <div>
                 <label className="mb-1 block text-xs font-semibold text-slate-400 uppercase">Tailored Professional Headline</label>
                 <input
                   value={resumeData.headline}
                   onChange={(e) => setResumeData({ ...resumeData, headline: e.target.value })}
-                  className="h-11 w-full rounded-xl border border-white/10 bg-[#0d1317] px-3.5 text-sm font-semibold text-white focus:border-emerald-500/50 focus:outline-none"
+                  className="h-11 w-full rounded-control border border-line-strong bg-surface-1 px-3.5 text-sm font-semibold text-white focus:border-emerald-500/50 focus:outline-none"
                 />
               </div>
 
@@ -391,7 +424,7 @@ export function MaterialEditor({ jobId, materialType = "cover-letter" }: { jobId
                   value={resumeData.summary}
                   onChange={(e) => setResumeData({ ...resumeData, summary: e.target.value })}
                   rows={4}
-                  className="w-full rounded-xl border border-white/10 bg-[#0d1317] p-3 text-xs leading-relaxed text-slate-200 focus:border-emerald-500/50 focus:outline-none"
+                  className="w-full rounded-control border border-line-strong bg-surface-1 p-3 text-xs leading-relaxed text-slate-200 focus:border-emerald-500/50 focus:outline-none"
                 />
               </div>
 
@@ -400,7 +433,7 @@ export function MaterialEditor({ jobId, materialType = "cover-letter" }: { jobId
                 <input
                   value={resumeData.skills.join(", ")}
                   onChange={(e) => setResumeData({ ...resumeData, skills: e.target.value.split(",").map((s) => s.trim()) })}
-                  className="h-10 w-full rounded-xl border border-white/10 bg-[#0d1317] px-3.5 text-xs text-emerald-300 font-mono focus:border-emerald-500/50 focus:outline-none"
+                  className="h-10 w-full rounded-control border border-line-strong bg-surface-1 px-3.5 text-xs text-emerald-300 font-mono focus:border-emerald-500/50 focus:outline-none"
                 />
               </div>
             </div>
@@ -412,7 +445,7 @@ export function MaterialEditor({ jobId, materialType = "cover-letter" }: { jobId
                 <button
                   type="button"
                   onClick={() => setResumeData({ ...resumeData, experience: [...resumeData.experience, emptyEntry()] })}
-                  className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-emerald-400 hover:bg-white/10"
+                  className="flex items-center gap-1.5 rounded-control border border-line-strong bg-white/5 px-3 py-1.5 text-xs font-semibold text-emerald-400 hover:bg-white/10"
                 >
                   <Plus className="size-3.5" /> Add Experience
                 </button>
@@ -442,7 +475,7 @@ export function MaterialEditor({ jobId, materialType = "cover-letter" }: { jobId
                 <button
                   type="button"
                   onClick={() => setResumeData({ ...resumeData, projects: [...resumeData.projects, emptyEntry()] })}
-                  className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-emerald-400 hover:bg-white/10"
+                  className="flex items-center gap-1.5 rounded-control border border-line-strong bg-white/5 px-3 py-1.5 text-xs font-semibold text-emerald-400 hover:bg-white/10"
                 >
                   <Plus className="size-3.5" /> Add Project
                 </button>

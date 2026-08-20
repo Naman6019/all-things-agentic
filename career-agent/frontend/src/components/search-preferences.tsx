@@ -1,11 +1,11 @@
 "use client";
 
-import { ArrowLeft, CheckCircle2, MapPin, Plus, Save, Trash2, Sliders, Sparkles } from "lucide-react";
-import Link from "next/link";
+import { Plus, Save, Trash2 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { AuthScreen } from "@/components/auth-screen";
 import { useAuth } from "@/components/auth-provider";
 import type { LocationPreference, SearchPreferences, WorkMode } from "@/lib/types";
+import { WorkbenchHeader } from "@/components/workbench-header";
 
 const emptyLocation = (): LocationPreference => ({ location: "", work_mode: "both" });
 
@@ -57,7 +57,7 @@ export function SearchPreferencesPage() {
 
   if (authLoading || (user && loading)) {
     return (
-      <div className="flex min-h-dvh items-center justify-center bg-[#080c0e]">
+      <div className="flex min-h-dvh items-center justify-center bg-surface-0">
         <span className="size-5 animate-spin rounded-full border-2 border-emerald-500/30 border-t-emerald-400" />
       </div>
     );
@@ -104,30 +104,25 @@ export function SearchPreferencesPage() {
   }
 
   return (
-    <div className="relative min-h-dvh overflow-x-hidden bg-[#080c0e] text-slate-100 pb-20">
-      <div className="ambient-glow-careers" />
+    <div className="relative min-h-dvh overflow-x-hidden bg-surface-0 text-slate-100 pb-20">
+      {/* Subtle Grid Background */}
+      <div className="absolute inset-0 bg-grid-subtle pointer-events-none opacity-40" />
 
-      {/* Header */}
-      <header className="sticky top-0 z-40 border-b border-white/5 bg-[#080c0e]/85 backdrop-blur-xl">
-        <div className="mx-auto flex h-16 max-w-4xl items-center justify-between px-4 sm:px-6">
-          <Link
-            href="/jobs"
-            className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:bg-white/10 hover:text-white"
-          >
-            <ArrowLeft className="size-3.5" />
-            <span>Back to Careers</span>
-          </Link>
-          <span className="font-display text-sm font-bold text-white">Search Preferences</span>
+      <WorkbenchHeader
+        backHref="/jobs"
+        backLabel="Back to Careers"
+        title="Search Preferences"
+        actions={
           <button
             onClick={save}
             disabled={saving}
-            className="flex items-center gap-1.5 rounded-xl bg-emerald-500 px-4 py-1.5 text-xs font-semibold text-[#080c0e] shadow-[0_0_15px_rgba(16,185,129,0.3)] transition hover:bg-emerald-400 active:scale-[0.98] disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-control bg-careers px-4 py-2 text-xs font-semibold text-surface-0 shadow-[0_0_15px_rgba(16,185,129,0.3)] transition hover:bg-careers-bright active:scale-[0.98] disabled:opacity-50"
           >
-            <Save className="size-3.5" />
+            <Save className="size-3.5" aria-hidden />
             <span>{saving ? "Saving…" : "Save"}</span>
           </button>
-        </div>
-      </header>
+        }
+      />
 
       {/* Form Workspace */}
       <main className="relative z-10 mx-auto max-w-4xl px-4 py-8 sm:px-6">
@@ -139,21 +134,21 @@ export function SearchPreferencesPage() {
         </div>
 
         {saved && (
-          <div className="mb-6 rounded-2xl border border-emerald-500/30 bg-emerald-950/40 p-4 text-xs text-emerald-300">
+          <div className="mb-6 rounded-surface border border-emerald-500/30 bg-emerald-950/40 p-4 text-xs text-emerald-300">
             ✓ Search preferences saved to Firestore. Subsequent pipeline runs will evaluate against these updated parameters.
           </div>
         )}
 
         {error && (
-          <div className="mb-6 rounded-2xl border border-rose-500/30 bg-rose-950/40 p-4 text-xs text-rose-300">
+          <div className="mb-6 rounded-surface border border-rose-500/30 bg-rose-950/40 p-4 text-xs text-rose-300">
             {error}
           </div>
         )}
 
         <form onSubmit={save} className="space-y-8">
           {/* Target Titles */}
-          <section className="glass-panel rounded-3xl p-6 border border-white/10 space-y-4">
-            <div className="flex items-center justify-between border-b border-white/5 pb-3">
+          <section className="glass-panel rounded-surface p-6 border border-line-strong space-y-4">
+            <div className="flex items-center justify-between border-b border-line pb-3">
               <div>
                 <h3 className="font-display text-base font-bold text-white">Target Job Titles</h3>
                 <p className="text-xs text-slate-400">ATS postings must match at least one of these title patterns</p>
@@ -161,7 +156,7 @@ export function SearchPreferencesPage() {
               <button
                 type="button"
                 onClick={() => setPreferences((p) => ({ ...p, target_titles: [...p.target_titles, ""] }))}
-                className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-emerald-400 hover:bg-white/10"
+                className="flex items-center gap-1.5 rounded-control border border-line-strong bg-white/5 px-3 py-1.5 text-xs font-semibold text-emerald-400 hover:bg-white/10"
               >
                 <Plus className="size-3.5" /> Add Title
               </button>
@@ -174,12 +169,12 @@ export function SearchPreferencesPage() {
                     value={title}
                     onChange={(e) => updateTitle(idx, e.target.value)}
                     placeholder="e.g. Senior AI Engineer, Full Stack Developer"
-                    className="h-10 flex-1 rounded-xl border border-white/10 bg-[#0d1317] px-3.5 text-xs text-white placeholder:text-slate-600 focus:border-emerald-500/50 focus:outline-none"
+                    className="h-10 flex-1 rounded-control border border-line-strong bg-surface-1 px-3.5 text-xs text-white placeholder:text-slate-500 focus:border-emerald-500/50 focus:outline-none"
                   />
                   <button
                     type="button"
                     onClick={() => setPreferences((p) => ({ ...p, target_titles: p.target_titles.filter((_, i) => i !== idx) }))}
-                    className="rounded-lg p-2 text-slate-500 hover:bg-rose-500/10 hover:text-rose-400"
+                    className="rounded-control p-2 text-slate-500 hover:bg-rose-500/10 hover:text-rose-400"
                   >
                     <Trash2 className="size-4" />
                   </button>
@@ -189,8 +184,8 @@ export function SearchPreferencesPage() {
           </section>
 
           {/* Location Preferences */}
-          <section className="glass-panel rounded-3xl p-6 border border-white/10 space-y-4">
-            <div className="flex items-center justify-between border-b border-white/5 pb-3">
+          <section className="glass-panel rounded-surface p-6 border border-line-strong space-y-4">
+            <div className="flex items-center justify-between border-b border-line pb-3">
               <div>
                 <h3 className="font-display text-base font-bold text-white">Location & Work Modes</h3>
                 <p className="text-xs text-slate-400">Specify allowed geographic regions or global remote</p>
@@ -198,7 +193,7 @@ export function SearchPreferencesPage() {
               <button
                 type="button"
                 onClick={() => setPreferences((p) => ({ ...p, location_preferences: [...p.location_preferences, emptyLocation()] }))}
-                className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-emerald-400 hover:bg-white/10"
+                className="flex items-center gap-1.5 rounded-control border border-line-strong bg-white/5 px-3 py-1.5 text-xs font-semibold text-emerald-400 hover:bg-white/10"
               >
                 <Plus className="size-3.5" /> Add Location
               </button>
@@ -211,12 +206,12 @@ export function SearchPreferencesPage() {
                     value={loc.location}
                     onChange={(e) => updateLocation(idx, { location: e.target.value })}
                     placeholder="e.g. Remote, San Francisco, London"
-                    className="h-10 flex-1 min-w-[180px] rounded-xl border border-white/10 bg-[#0d1317] px-3.5 text-xs text-white placeholder:text-slate-600 focus:border-emerald-500/50 focus:outline-none"
+                    className="h-10 flex-1 min-w-[180px] rounded-control border border-line-strong bg-surface-1 px-3.5 text-xs text-white placeholder:text-slate-500 focus:border-emerald-500/50 focus:outline-none"
                   />
                   <select
                     value={loc.work_mode}
                     onChange={(e) => updateLocation(idx, { work_mode: e.target.value as WorkMode })}
-                    className="h-10 rounded-xl border border-white/10 bg-[#0d1317] px-3 text-xs text-slate-300 focus:border-emerald-500/50 focus:outline-none"
+                    className="h-10 rounded-control border border-line-strong bg-surface-1 px-3 text-xs text-slate-300 focus:border-emerald-500/50 focus:outline-none"
                   >
                     <option value="remote">Remote Only</option>
                     <option value="onsite">On-Site</option>
@@ -226,7 +221,7 @@ export function SearchPreferencesPage() {
                   <button
                     type="button"
                     onClick={() => setPreferences((p) => ({ ...p, location_preferences: p.location_preferences.filter((_, i) => i !== idx) }))}
-                    className="rounded-lg p-2 text-slate-500 hover:bg-rose-500/10 hover:text-rose-400"
+                    className="rounded-control p-2 text-slate-500 hover:bg-rose-500/10 hover:text-rose-400"
                   >
                     <Trash2 className="size-4" />
                   </button>
@@ -236,12 +231,12 @@ export function SearchPreferencesPage() {
           </section>
 
           {/* Visa Sponsorship Toggle */}
-          <section className="glass-panel rounded-3xl p-6 border border-white/10">
+          <section className="glass-panel rounded-surface p-6 border border-line-strong">
             <label className="flex items-center justify-between cursor-pointer">
               <div>
                 <span className="font-display text-sm font-bold text-white block">Requires Visa Sponsorship</span>
                 <span className="text-xs text-slate-400 block mt-0.5">
-                  When enabled, postings stating "no sponsorship available" will be flagged as unmet requirements.
+                  When enabled, postings stating &ldquo;no sponsorship available&rdquo; will be flagged as unmet requirements.
                 </span>
               </div>
               <input
@@ -251,7 +246,7 @@ export function SearchPreferencesPage() {
                   setSaved(false);
                   setPreferences((p) => ({ ...p, needs_visa_sponsorship: e.target.checked }));
                 }}
-                className="size-5 rounded border-white/20 bg-[#0d1317] text-emerald-500 focus:ring-emerald-500/20"
+                className="size-5 rounded border-white/20 bg-surface-1 text-emerald-500 focus:ring-emerald-500/20"
               />
             </label>
           </section>

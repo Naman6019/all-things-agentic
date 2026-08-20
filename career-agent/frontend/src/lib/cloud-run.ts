@@ -1,4 +1,5 @@
 import { GoogleAuth } from "google-auth-library";
+import { talentOSUserId } from "@/lib/auth-server";
 
 const googleAuth = new GoogleAuth();
 
@@ -48,5 +49,16 @@ export async function callTalentOS(path: string, init: RequestInit = {}) {
   return response;
 }
 
+export async function callTalentOSForUser(
+  path: string,
+  user: { uid: string; email?: string | null },
+  init: RequestInit = {},
+) {
+  const headers = new Headers(init.headers);
+  headers.set("x-talentos-user-id", talentOSUserId(user));
+  return callTalentOS(path, { ...init, headers });
+}
+
 // Backwards-compatible alias
 export const callCareerAgent = callTalentOS;
+export const callCareerAgentForUser = callTalentOSForUser;

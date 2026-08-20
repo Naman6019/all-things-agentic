@@ -1,6 +1,11 @@
 import { NextRequest } from "next/server";
 import { adminAuth } from "@/lib/firebase-admin";
 
+type AuthenticatedUser = {
+  uid: string;
+  email?: string | null;
+};
+
 export class AuthError extends Error {
   constructor(
     message: string,
@@ -36,9 +41,25 @@ export async function requireAuthorizedUser(request: NextRequest) {
       .filter(Boolean),
   );
 
-  if (!user.email || !allowed.has(user.email.toLowerCase())) {
-    throw new AuthError("This account has not been provisioned for the private beta.", 403);
+  // An empty list is the public-preview mode. Keep the variable as an
+  // optional emergency allowlist for the owner, staging, or a rollback.
+  if (allowed.size > 0 && (!user.email || !allowed.has(user.email.toLowerCase()))) {
+    throw new AuthError("This account is not enabled for TalentOS.", 403);
   }
 
   return user;
+}
+
+export function talentOSUserId(user: AuthenticatedUser) {
+  const ownerEmails = new Set(
+    (process.env.TALENTOS_OWNER_EMAILS ?? "")
+      .split(",")
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean),
+  );
+
+  // Preserve the existing owner documents while new public accounts get a
+  // uid-scoped Firestore namespace.
+  if (user.email && ownerEmails.has(user.email.toLowerCase())) return "owner";
+  return user.uid;
 }

@@ -17,6 +17,7 @@ made public.
 from __future__ import annotations
 
 import hmac
+import re
 import uuid
 from dataclasses import asdict
 from typing import Literal
@@ -34,6 +35,26 @@ from career_agent.storage import firestore_store
 from career_agent.tools import job_tools
 
 app = FastAPI()
+
+_USER_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+
+
+def require_user_scope(x_talentos_user_id: str = Header(default="")):
+    """Scope proxy requests to the Firebase user verified by Next.js.
+
+    Cloud Run remains IAM-private, so this header is accepted only from the
+    authenticated server-side proxy. Missing headers keep local/legacy owner
+    flows working.
+    """
+    user_id = x_talentos_user_id.strip() or config.USER_ID
+    if not _USER_ID_PATTERN.fullmatch(user_id):
+        raise HTTPException(status_code=400, detail="Invalid TalentOS user scope.")
+
+    token = config.set_current_user_id(user_id)
+    try:
+        yield
+    finally:
+        config.reset_current_user_id(token)
 
 
 def require_run_token(x_run_token: str = Header(default="")) -> None:
@@ -132,7 +153,7 @@ async def save_profile(request: Request):
     return RedirectResponse("/profile?saved=1", status_code=303)
 
 
-@app.get("/resume", response_class=HTMLResponse)
+@app.get("/resume", response_class=HTMLResponse, dependencies=[Depends(require_user_scope)])
 def tailored_resume(job_id: str):
     """The tailored resume for one job, as a printable document.
 
@@ -189,7 +210,7 @@ def set_status(job_id: str = Form(...), status: str = Form(...)):
     return RedirectResponse(f"/?status={'applied' if status == 'applied' else 'matched'}", status_code=303)
 
 
-@app.get("/api/jobs")
+@app.get("/api/jobs", dependencies=[Depends(require_user_scope)])
 def api_jobs(status: str = "matched"):
     """The same data as JSON, for anything that wants to consume it directly."""
     statuses = ["matched", "drafted"] if status == "matched" else [status]
@@ -228,9 +249,9 @@ class SearchPreferencesRequest(BaseModel):
     needs_visa_sponsorship: bool
 
 
-@app.get("/api/profile")
+@app.get("/api/profile", dependencies=[Depends(require_user_scope)])
 def api_profile():
-    """Return the search preferences for the current saved beta profile."""
+    """Return the search preferences for the current saved profile."""
     profile = config.load_candidate_profile()
     return {
         "target_titles": profile.target_titles,
@@ -239,7 +260,7 @@ def api_profile():
     }
 
 
-@app.put("/api/profile")
+@app.put("/api/profile", dependencies=[Depends(require_user_scope)])
 def api_save_profile(payload: SearchPreferencesRequest):
     """Update search scope without overwriting resume or drafting fields."""
     titles = list(dict.fromkeys(title.strip() for title in payload.target_titles if title.strip()))
@@ -291,7 +312,7 @@ async def _queue_quick_add(url: str, text: str, title: str, company: str) -> str
     return job.job_id
 
 
-@app.post("/api/quick-add", dependencies=[Depends(require_run_token)])
+@app.post("/api/quick-add", dependencies=[Depends(require_run_token), Depends(require_user_scope)])
 async def api_quick_add(payload: QuickAddRequest):
     """Queues one user-supplied posting for the next run.
 
@@ -306,16 +327,43 @@ async def api_quick_add(payload: QuickAddRequest):
     return {"queued": job_id, "note": "Evaluated on the next POST /run."}
 
 
-@app.post("/api/applications/status")
+# The web UI moves a card between its To Apply / Applied / Skipped tabs, so
+# every one of these is a legitimate target -- not only the two the agent
+# writes itself.
+_WEB_STATUSES = ("matched", "drafted", "applied", "skipped")
+
+
+@app.post("/api/applications/status", dependencies=[Depends(require_user_scope)])
 def api_application_status(payload: ApplicationStatusRequest):
     """Updates the human-owned application status for the separate web UI."""
-    if payload.status not in ("applied", "drafted"):
-        raise HTTPException(status_code=400, detail="status must be 'applied' or 'drafted'.")
+    if payload.status not in _WEB_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"status must be one of: {', '.join(_WEB_STATUSES)}.",
+        )
     job_ids = _set_status_across_group(payload.job_id, payload.status)
+    if not job_ids:
+        # _set_status_across_group resolves the group from the visible tabs,
+        # which deliberately exclude skipped applications. Un-skipping one
+        # therefore finds no group; the single posting is still a valid target.
+        firestore_store.set_application_status(payload.job_id, payload.status)
+        job_ids = [payload.job_id]
     return {"job_id": payload.job_id, "job_ids": job_ids, "status": payload.status}
 
 
-@app.get("/api/materials")
+@app.get("/api/run-summary", dependencies=[Depends(require_user_scope)])
+def api_run_summary():
+    """The latest run's ingestion, drop and cost accounting, for the web UI.
+
+    The pipeline has always written this document (fetched, unseen,
+    relevant_after_prefilter, filtered_out by reason, cost_usd); nothing
+    exposed it, so the dashboard could not show the ~90% of postings the
+    deterministic pre-filter drops before any model call.
+    """
+    return firestore_store.get_latest_run_summary()
+
+
+@app.get("/api/materials", dependencies=[Depends(require_user_scope)])
 def api_materials(job_id: str):
     """Returns generated and human-edited drafts for one posting."""
     app_doc = firestore_store.get_application(job_id)
@@ -346,7 +394,7 @@ def api_materials(job_id: str):
     }
 
 
-@app.put("/api/materials")
+@app.put("/api/materials", dependencies=[Depends(require_user_scope)])
 def api_save_material(payload: MaterialEditRequest):
     """Saves a human revision or restores the generated draft."""
     if not firestore_store.get_application(payload.job_id):
@@ -430,7 +478,7 @@ async def run_freelance_pipeline_endpoint(max_leads: int | None = None):
     )
 
 
-@app.get("/api/leads")
+@app.get("/api/leads", dependencies=[Depends(require_user_scope)])
 def api_leads(status: str = "matched"):
     """Freelance leads in the given status, as JSON for the frontend."""
     statuses = ["matched", "pitched"] if status == "matched" else [status]
@@ -456,7 +504,7 @@ class FreelanceProfileRequest(BaseModel):
     freelance_portfolio_summary: str
 
 
-@app.get("/api/leads/{lead_id}")
+@app.get("/api/leads/{lead_id}", dependencies=[Depends(require_user_scope)])
 def api_lead(lead_id: str):
     """Returns the pitch and evaluation for one lead."""
     lead_doc = firestore_store.get_lead(lead_id)
@@ -465,7 +513,7 @@ def api_lead(lead_id: str):
     return lead_doc
 
 
-@app.put("/api/leads/{lead_id}/status")
+@app.put("/api/leads/{lead_id}/status", dependencies=[Depends(require_user_scope)])
 def api_lead_status(lead_id: str, status: str = Form(...)):
     """Updates the human-owned lead status (sent, replied, archived)."""
     if status not in ("sent", "replied", "archived", "matched", "pitched"):
@@ -474,7 +522,7 @@ def api_lead_status(lead_id: str, status: str = Form(...)):
     return {"lead_id": lead_id, "status": status}
 
 
-@app.put("/api/pitch")
+@app.put("/api/pitch", dependencies=[Depends(require_user_scope)])
 def api_save_pitch(payload: PitchEditRequest):
     """Saves a human-edited pitch or restores the generated draft."""
     if not firestore_store.get_lead(payload.lead_id):
@@ -489,7 +537,7 @@ def api_save_pitch(payload: PitchEditRequest):
     return {"lead_id": payload.lead_id, "edited": True}
 
 
-@app.get("/api/freelance-profile")
+@app.get("/api/freelance-profile", dependencies=[Depends(require_user_scope)])
 def api_freelance_profile():
     """Return the freelance overlay fields for the current profile."""
     profile = config.load_candidate_profile()
@@ -501,7 +549,7 @@ def api_freelance_profile():
     }
 
 
-@app.put("/api/freelance-profile")
+@app.put("/api/freelance-profile", dependencies=[Depends(require_user_scope)])
 def api_save_freelance_profile(payload: FreelanceProfileRequest):
     """Update freelance overlay fields without overwriting job-search fields."""
     profile = config.load_candidate_profile()

@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from contextvars import ContextVar, Token
 from dataclasses import asdict
 from pathlib import Path
 
@@ -17,16 +18,29 @@ from .models import CandidateProfile
 load_dotenv()
 
 # --- Tenancy -------------------------------------------------------------------
-# Every per-user document is keyed by this. It is a single hardcoded owner
-# today, because there is no auth yet -- but the data model is scoped now so
-# that adding real users later is wiring an identity into this one value rather
-# than migrating every document.
+# Scheduled runs continue to use this bootstrap owner. Authenticated frontend
+# requests temporarily override it with a Firebase-scoped user id.
 #
 # The alternative was keying documents by job id alone, which is what this
 # replaced. That silently breaks the moment a second user exists: user A's
 # verdict on a job marks it seen, so user B never sees the posting at all, and
 # their drafts overwrite each other.
 USER_ID = os.environ.get("USER_ID", "owner")
+
+_request_user_id: ContextVar[str | None] = ContextVar("talentos_request_user_id", default=None)
+
+
+def current_user_id() -> str:
+    """Return the request user, or the scheduler/bootstrap owner locally."""
+    return _request_user_id.get() or USER_ID
+
+
+def set_current_user_id(user_id: str) -> Token:
+    return _request_user_id.set(user_id)
+
+
+def reset_current_user_id(token: Token) -> None:
+    _request_user_id.reset(token)
 
 # --- Endpoint auth ---------------------------------------------------------------
 # Defence in depth for the endpoints that cost money. The PRIMARY gate is Cloud
@@ -261,6 +275,7 @@ PROFILE_PATH = Path(os.environ.get("PROFILE_PATH", "profile.json"))
 
 
 _profile_cache: CandidateProfile | None = None
+_profile_cache_by_user: dict[str, CandidateProfile] = {}
 
 
 def _profile_from_dict(data: dict) -> CandidateProfile:
@@ -271,6 +286,21 @@ def _profile_from_dict(data: dict) -> CandidateProfile:
     """
     known = {f for f in CandidateProfile.__dataclass_fields__}
     return CandidateProfile(**{k: v for k, v in data.items() if k in known})
+
+
+def _empty_public_profile() -> CandidateProfile:
+    """New public accounts start empty instead of inheriting the owner resume."""
+    return CandidateProfile(
+        target_titles=[],
+        must_have_skills=[],
+        min_years_experience=0,
+        remote_only=False,
+        allowed_locations=[],
+        min_salary=None,
+        min_salary_currency="USD",
+        needs_visa_sponsorship=False,
+        resume_master_text="",
+    )
 
 
 def load_candidate_profile() -> CandidateProfile:
@@ -285,8 +315,11 @@ def load_candidate_profile() -> CandidateProfile:
     cached profile that ignores an edit is worse than no cache.
     """
     global _profile_cache
-    if _profile_cache is not None:
+    user_id = current_user_id()
+    if user_id == USER_ID and _profile_cache is not None:
         return _profile_cache
+    if user_id != USER_ID and user_id in _profile_cache_by_user:
+        return _profile_cache_by_user[user_id]
 
     from .storage import firestore_store  # local import: firestore_store imports config
 
@@ -297,8 +330,17 @@ def load_candidate_profile() -> CandidateProfile:
         print(f"could not read profile from Firestore, falling back to file: {type(e).__name__}: {e}")
 
     if stored:
-        _profile_cache = _profile_from_dict(stored)
-        return _profile_cache
+        profile = _profile_from_dict(stored)
+        if user_id == USER_ID:
+            _profile_cache = profile
+        else:
+            _profile_cache_by_user[user_id] = profile
+        return profile
+
+    if user_id != USER_ID:
+        profile = _empty_public_profile()
+        _profile_cache_by_user[user_id] = profile
+        return profile
 
     if not PROFILE_PATH.exists():
         raise FileNotFoundError(
@@ -313,7 +355,10 @@ def load_candidate_profile() -> CandidateProfile:
 def invalidate_profile_cache() -> None:
     """Call after saving; the next read picks up the change."""
     global _profile_cache
-    _profile_cache = None
+    user_id = current_user_id()
+    if user_id == USER_ID:
+        _profile_cache = None
+    _profile_cache_by_user.pop(user_id, None)
 
 
 # --- Re-evaluating skipped jobs -------------------------------------------------

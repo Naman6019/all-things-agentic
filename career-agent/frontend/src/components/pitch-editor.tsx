@@ -1,26 +1,24 @@
 "use client";
 
 import { 
-  ArrowLeft, 
   Check, 
   Copy, 
   ExternalLink, 
   RotateCcw, 
   Save, 
-  Send, 
-  Sparkles, 
   DollarSign, 
   User, 
   Link2,
-  BriefcaseBusiness
 } from "lucide-react";
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
+import { useToast } from "@/components/ui/toast";
 import type { Lead } from "@/lib/types";
+import { WorkbenchHeader } from "@/components/workbench-header";
 
 export function PitchEditorPage({ leadId }: { leadId: string }) {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [lead, setLead] = useState<Lead | null>(null);
   const [editedPitch, setEditedPitch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -76,8 +74,18 @@ export function PitchEditorPage({ leadId }: { leadId: string }) {
     }
   }
 
-  async function reset() {
-    if (!confirm("Reset back to original Gemini AI pitch draft?")) return;
+  // A native confirm() blocks the tab and looks nothing like the product.
+  function reset() {
+    toast({
+      title: "Reset to the original Gemini draft?",
+      description: "Your edits to this pitch will be discarded.",
+      tone: "info",
+      duration: 8000,
+      action: { label: "Reset", onClick: () => void resetPitch() },
+    });
+  }
+
+  async function resetPitch() {
     setSaving(true); setError("");
     try {
       const response = await request("/api/pitch", {
@@ -113,46 +121,41 @@ export function PitchEditorPage({ leadId }: { leadId: string }) {
   }
 
   return (
-    <div className="relative min-h-dvh overflow-x-hidden bg-[#080c0e] text-slate-100 pb-20">
-      <div className="ambient-glow-studio" />
+    <div className="relative min-h-dvh overflow-x-hidden bg-surface-0 text-slate-100 pb-20">
+      {/* Subtle Grid Background */}
+      <div className="absolute inset-0 bg-grid-subtle pointer-events-none opacity-40" />
 
-      {/* Header */}
-      <header className="sticky top-0 z-40 border-b border-white/5 bg-[#080c0e]/85 backdrop-blur-xl">
-        <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4 sm:px-6">
-          <div className="flex items-center gap-3">
-            <Link
-              href="/freelance"
-              className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:bg-white/10 hover:text-white"
-            >
-              <ArrowLeft className="size-3.5" />
-              <span>Back to Studio</span>
-            </Link>
-            <div className="h-4 w-px bg-white/10" />
-            <span className="font-display text-sm font-bold text-white truncate max-w-xs sm:max-w-md">
-              {lead?.title || "Pitch Studio"}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
+      <WorkbenchHeader
+        backHref="/freelance"
+        backLabel="Back to Studio"
+        width="max-w-5xl"
+        title={lead?.title || "Pitch Studio"}
+        actions={
+          <>
             <button
               onClick={copyPitch}
-              className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:bg-white/10 hover:text-white"
+              aria-label="Copy this pitch to the clipboard"
+              className="flex items-center gap-1.5 rounded-control border border-line-strong bg-white/5 px-3 py-2 text-xs font-medium text-slate-300 transition hover:bg-white/10 hover:text-white"
             >
-              {copied ? <Check className="size-3.5 text-amber-400" /> : <Copy className="size-3.5" />}
-              <span>{copied ? "Copied" : "Copy Pitch"}</span>
+              {copied ? (
+                <Check className="size-3.5 text-studio" aria-hidden />
+              ) : (
+                <Copy className="size-3.5" aria-hidden />
+              )}
+              <span className="hidden sm:inline">{copied ? "Copied" : "Copy Pitch"}</span>
             </button>
 
             <button
               onClick={save}
               disabled={saving}
-              className="flex items-center gap-1.5 rounded-xl bg-amber-500 px-4 py-1.5 text-xs font-semibold text-[#080c0e] shadow-[0_0_15px_rgba(245,158,11,0.3)] transition hover:bg-amber-400 active:scale-[0.98] disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-control bg-studio px-4 py-2 text-xs font-semibold text-surface-0 shadow-[0_0_15px_rgba(245,158,11,0.3)] transition hover:bg-studio-bright active:scale-[0.98] disabled:opacity-50"
             >
-              <Save className="size-3.5" />
+              <Save className="size-3.5" aria-hidden />
               <span>{saving ? "Saving…" : "Save Changes"}</span>
             </button>
-          </div>
-        </div>
-      </header>
+          </>
+        }
+      />
 
       {/* Main Studio View */}
       <main className="relative z-10 mx-auto max-w-5xl px-4 py-8 sm:px-6">
@@ -161,13 +164,13 @@ export function PitchEditorPage({ leadId }: { leadId: string }) {
             <span className="size-5 animate-spin rounded-full border-2 border-amber-500/30 border-t-amber-400" />
           </div>
         ) : error ? (
-          <div className="rounded-2xl border border-rose-500/30 bg-rose-950/30 p-6 text-center text-xs text-rose-300">
+          <div className="rounded-surface border border-rose-500/30 bg-rose-950/30 p-6 text-center text-xs text-rose-300">
             {error}
           </div>
         ) : lead ? (
           <div className="space-y-6">
             {/* Lead Context Header Card */}
-            <div className="glass-panel rounded-3xl p-6 border border-white/10">
+            <div className="glass-panel rounded-surface p-6 border border-line-strong">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <span className="text-xs font-mono text-amber-400 uppercase tracking-wider">Freelance Lead Context</span>
@@ -193,7 +196,7 @@ export function PitchEditorPage({ leadId }: { leadId: string }) {
                     href={lead.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white self-start"
+                    className="flex items-center gap-1.5 rounded-control border border-line-strong bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white self-start"
                   >
                     <span>Open Client Post</span>
                     <ExternalLink className="size-3.5" />
@@ -203,11 +206,11 @@ export function PitchEditorPage({ leadId }: { leadId: string }) {
             </div>
 
             {/* Pitch Editor Workspace */}
-            <div className="glass-card rounded-3xl p-6 border border-white/10 space-y-4">
-              <div className="flex items-center justify-between border-b border-white/5 pb-3">
+            <div className="glass-card rounded-surface p-6 border border-line-strong space-y-4">
+              <div className="flex items-center justify-between border-b border-line pb-3">
                 <div>
                   <h3 className="font-display text-base font-bold text-white">Targeted Client Pitch</h3>
-                  <p className="text-xs text-slate-400">100-200 word direct outreach message tailored to the client's stated problem</p>
+                  <p className="text-xs text-slate-400">100-200 word direct outreach message tailored to the client&rsquo;s stated problem</p>
                 </div>
                 <button
                   type="button"
@@ -220,7 +223,7 @@ export function PitchEditorPage({ leadId }: { leadId: string }) {
               </div>
 
               {saved && (
-                <div className="rounded-xl border border-amber-500/30 bg-amber-950/40 p-3 text-xs text-amber-300">
+                <div className="rounded-control border border-amber-500/30 bg-amber-950/40 p-3 text-xs text-amber-300">
                   ✓ Pitch updated and saved to Firestore.
                 </div>
               )}
@@ -229,19 +232,19 @@ export function PitchEditorPage({ leadId }: { leadId: string }) {
                 value={editedPitch}
                 onChange={(e) => setEditedPitch(e.target.value)}
                 rows={12}
-                className="w-full resize-y rounded-2xl border border-white/10 bg-[#0d1317] p-4 text-sm leading-relaxed text-slate-200 placeholder:text-slate-600 focus:border-amber-500/50 focus:outline-none"
+                className="w-full resize-y rounded-surface border border-line-strong bg-surface-1 p-4 text-sm leading-relaxed text-slate-200 placeholder:text-slate-500 focus:border-amber-500/50 focus:outline-none"
               />
 
               {/* Pitch Metadata Chips */}
               <div className="grid gap-4 sm:grid-cols-2 pt-2">
-                <div className="rounded-2xl border border-white/5 bg-[#0a0f12] p-4 text-xs">
+                <div className="rounded-surface border border-line bg-surface-sunken p-4 text-xs">
                   <span className="font-semibold text-slate-300">Suggested Pricing Anchor:</span>
                   <div className="font-mono text-amber-400 font-bold mt-1 text-sm">
                     {lead.suggested_rate || "Competitive Fixed / Hourly"}
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-white/5 bg-[#0a0f12] p-4 text-xs">
+                <div className="rounded-surface border border-line bg-surface-sunken p-4 text-xs">
                   <span className="font-semibold text-slate-300">Recommended Channel:</span>
                   <div className="text-slate-300 font-medium mt-1">
                     {lead.contact_method || "Direct Message / Email"}
@@ -251,7 +254,7 @@ export function PitchEditorPage({ leadId }: { leadId: string }) {
 
               {/* Relevant Portfolio Links */}
               {lead.relevant_portfolio && lead.relevant_portfolio.length > 0 && (
-                <div className="rounded-2xl border border-white/5 bg-[#0a0f12] p-4 text-xs">
+                <div className="rounded-surface border border-line bg-surface-sunken p-4 text-xs">
                   <span className="font-semibold text-slate-300">Verified Portfolio Links to Include:</span>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {lead.relevant_portfolio.map((link, i) => (
@@ -260,7 +263,7 @@ export function PitchEditorPage({ leadId }: { leadId: string }) {
                         href={link}
                         target="_blank"
                         rel="noreferrer"
-                        className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-amber-300 hover:bg-white/10 font-mono text-[11px]"
+                        className="flex items-center gap-1 rounded-control border border-line-strong bg-white/5 px-2.5 py-1 text-amber-300 hover:bg-white/10 font-mono text-xs"
                       >
                         <Link2 className="size-3" />
                         <span>{link.replace(/^https?:\/\//, "")}</span>
