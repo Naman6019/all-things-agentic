@@ -4,6 +4,26 @@ Hackathon submission for the **Taskmaster** track: an autonomous opportunity int
 
 ---
 
+## Live demo & judge access
+
+**Hosted app:** https://all-things-agentic--allthingsagentic-505213.asia-southeast1.hosted.app
+
+The landing page is public. The workspace requires an account so that each
+user's opportunities, materials, and profile stay in their own Firestore
+namespace. Judges can either register in one step with any email and password,
+or use the shared demo account:
+
+| Field | Value |
+|---|---|
+| Email | `judge@talentos.demo` |
+| Password | `TalentOS-Judge-2026` |
+
+The demo account is intentionally shared and holds only sample pipeline data;
+please do not store anything sensitive in it. Sign-in accepts email and
+password or Google.
+
+---
+
 ## What's here
 
 | Directory / File | Description |
