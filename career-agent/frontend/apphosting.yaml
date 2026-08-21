@@ -1,5 +1,8 @@
 runConfig:
-  minInstances: 0
+  # Warm for the hackathon judging window -- a cold start on the first hit
+  # costs several seconds. Set back to 0 after judging to stop paying for an
+  # idle instance.
+  minInstances: 1
   maxInstances: 3
   concurrency: 40
   cpu: 1
