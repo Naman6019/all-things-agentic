@@ -8,15 +8,12 @@ runConfig:
   cpu: 1
   memoryMiB: 512
 
+# AUTHORIZED_EMAILS is deliberately absent. auth-server.ts reads an empty
+# value as public-preview mode, and App Hosting rejects an env entry with an
+# empty value, so the only way to express "no allowlist" is to declare
+# nothing. It had been set to a single owner address directly on the Cloud
+# Run service, which 403'd every other account; that value has been removed.
 env:
-  # Public preview: an empty allowlist lets any registered account in, each
-  # scoped to its own Firestore namespace by uid. Declared here rather than
-  # left unset so a stale value cannot linger on the Cloud Run service --
-  # a single owner address was doing exactly that and 403'd everyone else.
-  - variable: AUTHORIZED_EMAILS
-    value: ""
-    availability:
-      - RUNTIME
   - variable: TALENTOS_API_URL
     value: https://career-agent-275295803705.us-central1.run.app
     availability:
