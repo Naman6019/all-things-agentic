@@ -3,9 +3,15 @@ import { ToastProvider } from "@/components/ui/toast";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "TalentOS — Autonomous Opportunity Intelligence | AllStackLabs",
+  title: "TalentOS — Autonomous Opportunity Intelligence",
   description:
-    "TalentOS by AllStackLabs. Autonomous dual-stream career and freelance client intelligence pipeline on Google Cloud & Vertex AI.",
+    "TalentOS. Autonomous dual-stream career and freelance client intelligence pipeline on Google Cloud & Vertex AI.",
+  openGraph: {
+    title: "TalentOS — Autonomous Opportunity Intelligence",
+    description:
+      "Autonomous dual-stream career and freelance client intelligence pipeline on Google Cloud & Vertex AI.",
+    images: [{ url: "/brand/talentos-lockup.png", width: 1333, height: 276, alt: "TalentOS" }],
+  },
 };
 
 export const viewport: Viewport = {

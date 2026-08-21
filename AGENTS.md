@@ -2,7 +2,7 @@
 
 > **Context**: This repository is built for the **All Things Agentic Hackathon** (Submission Target: August 31, 2026).
 > 
-> **Product**: **TalentOS** — An AllStackLabs product. Autonomous opportunity intelligence and dual-stream career agent.
+> **Product**: **TalentOS** — Autonomous opportunity intelligence and dual-stream career agent.
 > 
 > **Tracks**:
 > 1. **Primary Submission (Taskmaster Track)**: **TalentOS // Careers** — Autonomous, event-driven career pipeline that discovers listings across public ATS and aggregators, validates hard/soft requirements via per-job reasoning, generates tailored materials, and ends in concrete artifacts (email digest, reviewable UI, print-ready tailored resumes).

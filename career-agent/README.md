@@ -1,14 +1,15 @@
 # TalentOS // Careers — Job Search Pipeline (Taskmaster track)
 
-An **AllStackLabs** product. Autonomous agent that fetches new job listings from
-company career portals and popular job sites, checks each one against your hard
-requirements, tells you exactly which requirement a non-match failed, and
-drafts a tailored resume + cover letter for the ones that match -- then
-emails you a single digest. See `../hackathon-project-plan.md` for the full
-design rationale (including why this doesn't scrape LinkedIn/Indeed).
+Autonomous agent that fetches new job listings from company career portals and
+popular job sites, checks each one against your hard requirements, tells you
+exactly which requirement a non-match failed, and drafts a tailored resume +
+cover letter for the ones that match -- then emails you a single digest. See
+`../hackathon-project-plan.md` for the full design rationale (including why
+this doesn't scrape LinkedIn/Indeed).
 
-This is TalentOS // Careers, the first of two TalentOS workflows (Job Search
-now, Freelance Client Pipeline -- TalentOS // Studio -- next).
+This service runs both TalentOS workflows: Careers for job applications and
+Studio for freelance leads. The canonical architecture, API, and operations
+references live in [`../docs/`](../docs/README.md).
 
 ## How it works
 
@@ -129,12 +130,11 @@ overwritten. Users can restore the generated version, copy the current cover
 letter, or print the current resume to PDF. Resume export prefers the edited
 version when one exists.
 
-The hosted release is a public preview. The landing page and Firebase
-registration are open, while every workspace route still verifies a Firebase
-ID token before it can call the private Cloud Run service. The proxy forwards a
-validated user scope to Firestore, so public accounts do not share the owner's
-applications or profile. The browser never receives Cloud Run credentials, and
-Cloud Run remains protected by IAM.
+The frontend is designed to verify a Firebase ID token before calling the
+private Cloud Run service. The proxy forwards a validated user scope to
+Firestore, so users do not share applications or profiles. The browser never
+receives Cloud Run credentials. Actual hosted access policy is deployment
+configuration and must be verified separately; see the operations guide.
 
 ```bash
 cd frontend

@@ -1,6 +1,6 @@
 # CLAUDE.md — TalentOS // Careers (Claude Code & Multi-Assistant Collaboration Guide)
 
-This repository is **TalentOS**, an AllStackLabs product. It is configured for
+This repository is **TalentOS**. It is configured for
 interoperability across **Claude Code**, **OpenAI Codex**, and **Google Antigravity**.
 
 ---

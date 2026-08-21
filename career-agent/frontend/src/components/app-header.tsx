@@ -1,12 +1,31 @@
 "use client";
 
-import { BriefcaseBusiness, LogOut, Search, Sliders, Sparkles } from "lucide-react";
+import { BriefcaseBusiness, LogOut, Search, Sliders } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { cn } from "@/lib/utils";
 
 export type Stream = "careers" | "studio";
+
+/**
+ * The TalentOS star mark, on its own. Sized by the caller so the glyph can sit
+ * anywhere the lockup does not fit — nav squares, auth cards, the mockup rail.
+ */
+export function BrandGlyph({ className = "size-8" }: { className?: string }) {
+  return (
+    <Image
+      src="/brand/talentos-mark.png"
+      alt=""
+      width={512}
+      height={512}
+      priority
+      aria-hidden
+      className={cn("shrink-0 object-contain", className)}
+    />
+  );
+}
 
 /** The TalentOS lockup. Shared so the mark can never drift between screens. */
 export function BrandMark({ href = "/" }: { href?: string }) {
@@ -16,9 +35,7 @@ export function BrandMark({ href = "/" }: { href?: string }) {
       className="flex items-center gap-2.5 transition hover:opacity-80"
       aria-label="TalentOS home"
     >
-      <span className="grid size-8 place-items-center rounded-control border border-line-strong bg-white/5 text-careers">
-        <Sparkles className="size-4" aria-hidden />
-      </span>
+      <BrandGlyph className="size-8" />
       <span className="font-display text-lg font-bold tracking-tight text-white">TalentOS</span>
     </Link>
   );
@@ -89,10 +106,6 @@ export function AppHeader({
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
         <div className="flex min-w-0 items-center gap-3">
           <BrandMark />
-          <span className="hidden items-center gap-1.5 rounded-control border border-line-strong bg-white/[0.03] px-2 py-0.5 text-xs text-slate-400 xl:flex">
-            <span className="size-1.5 rounded-full bg-careers" aria-hidden />
-            <span>An AllStackLabs Product</span>
-          </span>
           <StreamNav active={stream} className="hidden md:flex" />
         </div>
 

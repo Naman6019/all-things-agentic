@@ -3,7 +3,8 @@
 import React, { forwardRef, useRef } from "react";
 import Image from "next/image";
 import { AnimatedBeam } from "@/components/ui/animated-beam";
-import { Briefcase, Send, Sparkles } from "lucide-react";
+import { BrandGlyph } from "@/components/app-header";
+import { Briefcase, Send } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const Circle = forwardRef<
@@ -102,8 +103,8 @@ export function DataFlowBeams() {
             className="size-16 border-2 border-emerald-500/50 shadow-[0_0_40px_rgba(16,185,129,0.4)] bg-[#0e1f18]"
             title="TalentOS Autonomous Engine — Gemini 3.6 Flash"
           >
-            <div className="grid size-10 place-items-center rounded-full bg-emerald-50 text-emerald-600">
-              <Sparkles className="size-5" />
+            <div className="grid size-10 place-items-center rounded-full bg-surface-0/90">
+              <BrandGlyph className="size-6" />
             </div>
           </Circle>
         </div>

@@ -8,7 +8,6 @@ import {
   FileCode2,
   Layers,
   ShieldAlert,
-  Sparkles,
   Terminal,
 } from "lucide-react";
 import Image from "next/image";
@@ -17,7 +16,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { motion, useInView } from "motion/react";
 import { useAuth } from "@/components/auth-provider";
-import { BrandMark } from "@/components/app-header";
+import { BrandGlyph, BrandMark } from "@/components/app-header";
 import { AuthScreen } from "@/components/auth-screen";
 import { ScrollVelocityContainer, ScrollVelocityRow } from "@/components/ui/scroll-based-velocity";
 import { DataFlowBeams } from "@/components/data-flow-beams";
@@ -75,14 +74,14 @@ function DashboardMockup() {
           <span className="size-2.5 rounded-full bg-amber-500/50" />
           <span className="size-2.5 rounded-full bg-emerald-500/50" />
         </div>
-        <div className="flex-1 rounded-control bg-white/[0.04] px-3 py-0.5 text-center font-mono text-xs text-slate-500">
-          talentos.allstacklabs.com/jobs
+        <div className="flex-1 truncate rounded-control bg-white/[0.04] px-3 py-0.5 text-center font-mono text-xs text-slate-500">
+          all-things-agentic--allthingsagentic-505213.asia-southeast1.hosted.app/jobs
         </div>
       </div>
       <div className="flex bg-surface-0">
         <div className="hidden w-48 shrink-0 border-r border-line bg-surface-1 p-3 sm:block">
           <div className="mb-3 flex items-center gap-2 px-2">
-            <Sparkles className="size-3.5 text-emerald-400" />
+            <BrandGlyph className="size-4" />
             <span className="font-display text-xs font-bold text-white">TalentOS</span>
           </div>
           {["Careers", "Studio", "Materials", "Preferences"].map((item, i) => (
@@ -220,10 +219,6 @@ export function LandingPage() {
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3">
             <BrandMark />
-            <div className="hidden items-center gap-2 rounded-control border border-line-strong bg-white/[0.03] px-2.5 py-0.5 text-xs text-slate-400 sm:flex">
-              <span className="size-1.5 rounded-full bg-emerald-400" />
-              <span>An AllStackLabs Product</span>
-            </div>
           </div>
           <nav className="hidden items-center gap-6 text-xs font-medium text-slate-400 md:flex">
             <a href="#careers" className="transition hover:text-white">Careers Stream</a>
@@ -616,7 +611,6 @@ export function LandingPage() {
         <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
           <div className="flex items-center gap-2 text-xs text-slate-500">
             <span className="font-bold text-slate-300">TalentOS</span>
-            <span>·</span><span>An AllStackLabs Product</span>
             <span>·</span><span>All Things Agentic Hackathon</span>
           </div>
           <div className="flex items-center gap-5 text-xs text-slate-400">

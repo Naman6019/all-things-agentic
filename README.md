@@ -1,6 +1,6 @@
 # TalentOS
 
-An **AllStackLabs** product. Hackathon submission for the **Taskmaster** track: an autonomous opportunity intelligence platform featuring a dual-stream agent pipeline that discovers opportunities across public ATS and freelance feeds, checks each against hard/soft requirements via per-lead reasoning, and generates tailored, high-converting materials — all ending in concrete artifacts rather than chat replies.
+Hackathon submission for the **Taskmaster** track: an autonomous opportunity intelligence platform featuring a dual-stream agent pipeline that discovers opportunities across public ATS and freelance feeds, checks each against hard/soft requirements via per-lead reasoning, and generates tailored, high-converting materials — all ending in concrete artifacts rather than chat replies.
 
 ---
 
@@ -9,6 +9,7 @@ An **AllStackLabs** product. Hackathon submission for the **Taskmaster** track: 
 | Directory / File | Description |
 |---|---|
 | [`career-agent/`](career-agent/) | The core service. **Start with its [README](career-agent/README.md)** for setup, running, architecture, and caveats. |
+| [`docs/`](docs/README.md) | Canonical architecture, API, and operations references. |
 | [`hackathon-project-plan.md`](hackathon-project-plan.md) | Design rationale, anti-automation guardrails, and track rubrics. |
 | [`AGENTS.md`](AGENTS.md) | Architectural tenets, repo map, schemas, and developer guide for human and AI contributors. |
 
@@ -85,6 +86,10 @@ flowchart TB
     CAREERS_UI --> HUMAN
     STUDIO_UI --> HUMAN
 ```
+
+For endpoint contracts, deployment boundaries, and incident checks, use the
+[documentation index](docs/README.md). It distinguishes code-backed behavior
+from environment-specific deployment configuration and roadmap items.
 
 ---
 

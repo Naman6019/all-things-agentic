@@ -7,10 +7,11 @@ import {
   signInWithEmailAndPassword,
   signInWithPopup,
 } from "firebase/auth";
-import { ArrowLeft, CheckCircle2, Eye, EyeOff, Sparkles, ShieldCheck, Cpu } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Eye, EyeOff, ShieldCheck, Cpu } from "lucide-react";
 import { FormEvent, useState } from "react";
 import { auth } from "@/lib/firebase-client";
 import { cn } from "@/lib/utils";
+import { BrandGlyph } from "@/components/app-header";
 import { DataFlowBeams } from "@/components/data-flow-beams";
 
 type Mode = "sign-in" | "sign-up" | "reset";
@@ -88,13 +89,8 @@ export function AuthScreen({
     <div className="w-full rounded-surface border border-line bg-surface-1 p-6 sm:p-10 shadow-2xl text-slate-100">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className="grid size-8 place-items-center rounded-control bg-white/5 border border-line-strong text-emerald-400">
-            <Sparkles className="size-4" />
-          </div>
-          <div>
-            <span className="font-display text-base font-bold text-white">TalentOS</span>
-            <span className="block text-xs text-slate-500">An AllStackLabs Product</span>
-          </div>
+          <BrandGlyph className="size-8" />
+          <span className="font-display text-base font-bold text-white">TalentOS</span>
         </div>
         <span className="rounded-full border border-line-strong bg-white/[0.03] px-2.5 py-0.5 text-xs text-slate-400 font-mono">
           Public Preview
@@ -153,7 +149,7 @@ export function AuthScreen({
             autoComplete="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            placeholder="naman@allstacklabs.com"
+            placeholder="you@example.com"
             className="h-11 w-full rounded-control border border-line bg-surface-2 px-3.5 text-xs text-white placeholder:text-slate-500 focus:border-emerald-500/50 focus:bg-[#182029] focus:outline-none"
           />
         </div>
@@ -257,15 +253,8 @@ export function AuthScreen({
           {/* Header */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="grid size-9 place-items-center rounded-control bg-white/5 border border-line-strong text-emerald-400">
-                <Sparkles className="size-4" />
-              </div>
-              <div>
-                <span className="font-display text-lg font-bold tracking-tight text-white">TalentOS</span>
-                <span className="ml-2 rounded-control border border-line-strong bg-white/[0.03] px-2 py-0.5 text-xs text-slate-400">
-                  An AllStackLabs Product
-                </span>
-              </div>
+              <BrandGlyph className="size-9" />
+              <span className="font-display text-lg font-bold tracking-tight text-white">TalentOS</span>
             </div>
 
             {onBack && (
