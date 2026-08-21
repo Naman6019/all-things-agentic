@@ -2,15 +2,35 @@ import type { Metadata, Viewport } from "next";
 import { ToastProvider } from "@/components/ui/toast";
 import "./globals.css";
 
+/**
+ * Relative asset URLs in `openGraph` resolve against this. Without it Next
+ * falls back to http://localhost:3000 at build time, which ships a share
+ * preview no crawler can fetch.
+ */
+const siteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL ??
+  "https://all-things-agentic--allthingsagentic-505213.asia-southeast1.hosted.app";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title: "TalentOS — Autonomous Opportunity Intelligence",
   description:
     "TalentOS. Autonomous dual-stream career and freelance client intelligence pipeline on Google Cloud & Vertex AI.",
   openGraph: {
+    type: "website",
+    url: siteUrl,
+    siteName: "TalentOS",
     title: "TalentOS — Autonomous Opportunity Intelligence",
     description:
       "Autonomous dual-stream career and freelance client intelligence pipeline on Google Cloud & Vertex AI.",
-    images: [{ url: "/brand/talentos-lockup.png", width: 1333, height: 276, alt: "TalentOS" }],
+    images: [{ url: "/brand/og-card.png", width: 1200, height: 630, alt: "TalentOS" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "TalentOS — Autonomous Opportunity Intelligence",
+    description:
+      "Autonomous dual-stream career and freelance client intelligence pipeline on Google Cloud & Vertex AI.",
+    images: ["/brand/og-card.png"],
   },
 };
 
